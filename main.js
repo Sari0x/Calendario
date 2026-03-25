@@ -12,6 +12,7 @@ import {
   set,
   update,
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBBaOij5CcHOtPSkiA56dOJnPmVlovimtY',
@@ -25,6 +26,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const rtdb = getDatabase(app);
+const storage = getStorage(app);
 const pageSize = 6;
 
 const $ = (id) => document.getElementById(id);
@@ -67,6 +69,12 @@ function showSpinner(show) {
 function showNotice(message) {
   appNotice.textContent = message;
   appNotice.classList.remove('hidden');
+}
+
+function scrollToMeetingForm() {
+  const formSection = $('meetingFormSection');
+  formSection.classList.remove('collapsed');
+  formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function randomColor(seed) {
@@ -250,6 +258,7 @@ function renderCreatedLists() {
 function resetProviderForm() {
   editingProviderId = null;
   $('providersForm').reset();
+  $('providerImageFile').value = '';
   $('providersForm').querySelector('h3').textContent = 'Nuevo proveedor';
   $('saveProvider').textContent = 'Guardar';
 }
@@ -332,12 +341,16 @@ function meetingCard(meeting) {
 
     <ul class="participants-list">${participantList || '<li><i class="bi bi-person-x"></i><span>Sin participantes</span></li>'}</ul>
 
-    ${meeting.link ? `<a class="meeting-link" href="${meeting.link}" target="_blank" rel="noreferrer">${linkIcon}<span>Abrir reunión</span></a>` : '<span class="meeting-link muted"><i class="bi bi-link-45deg"></i> Sin link</span>'}
+    <div class="link-actions">
+      ${meeting.link ? `<a class="meeting-link" href="${meeting.link}" target="_blank" rel="noreferrer">${linkIcon}<span>Abrir reunión</span></a>` : '<span class="meeting-link muted"><i class="bi bi-link-45deg"></i> Sin link</span>'}
+      ${meeting.link ? `<button class="btn btn-pill btn-ghost btn-subtle" data-copy-link="${meeting.id}"><i class="bi bi-copy"></i> Copiar link</button>` : ''}
+      <button class="btn btn-pill btn-ghost btn-subtle" data-copy-summary="${meeting.id}"><i class="bi bi-whatsapp"></i> Copiar resumen</button>
+    </div>
 
     <div class="meeting-actions">
       ${isFinished ? `<button class="btn btn-pill btn-soft" data-reschedule="${meeting.id}"><i class="bi bi-arrow-repeat"></i> Reprogramar</button>` : ''}
       <button class="btn btn-pill btn-ghost" data-edit="${meeting.id}"><i class="bi bi-pencil-square"></i></button>
-      <button class="btn btn-pill btn-ghost" data-delete="${meeting.id}"><i class="bi bi-trash3"></i></button>
+      ${!isFinished ? `<button class="btn btn-pill btn-ghost" data-delete="${meeting.id}"><i class="bi bi-trash3"></i></button>` : ''}
     </div>
   </article>`;
 }
@@ -429,8 +442,25 @@ async function fetchMeetings() {
 async function onSaveProvider(e) {
   e.preventDefault();
   const name = $('providerName').value.trim();
-  const image = $('providerImage').value.trim();
-  if (!name || !image) return;
+  const imageUrl = $('providerImage').value.trim();
+  const imageFile = $('providerImageFile').files?.[0];
+  if (!name) return;
+
+  let image = imageUrl;
+  if (imageFile) {
+    const filePath = `providers/${Date.now()}-${imageFile.name.replace(/\\s+/g, '-')}`;
+    const uploaded = await uploadBytes(storageRef(storage, filePath), imageFile);
+    image = await getDownloadURL(uploaded.ref);
+  }
+
+  if (!image) {
+    await Swal.fire({
+      icon: 'info',
+      title: 'Falta imagen',
+      text: 'Podés pegar una URL o subir un archivo.',
+    });
+    return;
+  }
 
   if (editingProviderId) {
     await update(ref(rtdb, `providers/${editingProviderId}`), { name, image, updatedAt: new Date().toISOString() });
@@ -511,6 +541,20 @@ async function onSaveMeeting() {
       .map(({ id, name, lastName, email, initials: ini, color }) => ({ id, name, lastName, email, initials: ini, color })),
   };
 
+  const confirmation = await Swal.fire({
+    icon: 'question',
+    title: editingMeetingId ? '¿Guardar cambios de la reunión?' : '¿Cargar nuevo evento?',
+    text: 'Confirmá para guardar o cancelá para cerrar el editor sin guardar.',
+    showCancelButton: true,
+    confirmButtonText: editingMeetingId ? 'Sí, guardar' : 'Sí, cargar',
+    cancelButtonText: 'Cancelar y cerrar',
+  });
+
+  if (!confirmation.isConfirmed) {
+    resetMeetingForm();
+    return;
+  }
+
   if (editingMeetingId) {
     await update(ref(rtdb, `meetings/${editingMeetingId}`), { ...payload, updatedAt: new Date().toISOString() });
   } else {
@@ -541,7 +585,18 @@ function loadMeetingToForm(id) {
 }
 
 async function deleteMeeting(id) {
-  if (!confirm('¿Eliminar esta reunión?')) return;
+  const row = filteredMeetings.find((m) => m.id === id);
+  if (!row) return;
+  if (meetingStatus(row) === 'finished') return;
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: '¿Eliminar reunión activa?',
+    text: 'Esta acción quita la reunión del calendario.',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'No',
+  });
+  if (!result.isConfirmed) return;
   await set(ref(rtdb, `meetings/${id}`), null);
   await fetchMeetings();
 }
@@ -587,6 +642,22 @@ async function deleteParticipant(id) {
   if (!result.isConfirmed) return;
   await remove(ref(rtdb, `participants/${id}`));
   await loadReferences();
+}
+
+function buildMeetingSummary(meeting) {
+  const providersSummary = (meeting.providers || []).map((p) => p.name).join(', ') || 'Sin proveedores';
+  const participantsSummary = (meeting.participants || []).map((p) => `${p.name} ${p.lastName}`).join(', ') || 'Sin participantes';
+  const when = esFmt.format(new Date(meeting.startAt));
+  return `📅 Reunión: ${when}\n⏱️ Duración: ${meeting.duration || 60} min\n📝 Nota: ${meeting.note || 'Sin nota'}\n👥 Participantes: ${participantsSummary}\n🏢 Proveedores: ${providersSummary}\n🔗 Link: ${meeting.link || 'Sin link'}`;
+}
+
+async function copyToClipboard(content, okMessage) {
+  try {
+    await navigator.clipboard.writeText(content);
+    await Swal.fire({ icon: 'success', title: 'Copiado', text: okMessage, timer: 1300, showConfirmButton: false });
+  } catch (error) {
+    await Swal.fire({ icon: 'error', title: 'No se pudo copiar', text: 'Revisá permisos del navegador.' });
+  }
 }
 
 function bindPickerEvents(type) {
@@ -643,7 +714,10 @@ function bindPickerEvents(type) {
 }
 
 function bindEvents() {
-  $('openMeetingForm').addEventListener('click', () => $('meetingFormSection').classList.toggle('collapsed'));
+  $('openMeetingForm').addEventListener('click', () => {
+    scrollToMeetingForm();
+  });
+  $('saveMeetingFloating').addEventListener('click', onSaveMeeting);
   $('openProvidersModal').addEventListener('click', () => openProviderModal());
   $('openParticipantsModal').addEventListener('click', () => openParticipantModal());
 
@@ -659,7 +733,7 @@ function bindEvents() {
   $('providersForm').addEventListener('submit', onSaveProvider);
   $('participantsForm').addEventListener('submit', onSaveParticipant);
   $('saveMeeting').addEventListener('click', onSaveMeeting);
-  $('cancelEdit').addEventListener('click', () => resetMeetingForm({ keepOpen: true }));
+  $('cancelEdit').addEventListener('click', () => resetMeetingForm());
 
   bindPickerEvents('provider');
   bindPickerEvents('participant');
@@ -712,13 +786,29 @@ function bindEvents() {
     renderCurrentPage();
   });
 
+  $('scrollUpBtn').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  $('scrollDownBtn').addEventListener('click', () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+
   meetingsList.addEventListener('click', async (e) => {
     const idRes = e.target.closest('[data-reschedule]')?.dataset?.reschedule;
     const idEdit = e.target.closest('[data-edit]')?.dataset?.edit;
     const idDelete = e.target.closest('[data-delete]')?.dataset?.delete;
+    const idCopyLink = e.target.closest('[data-copy-link]')?.dataset?.copyLink;
+    const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     if (idRes) await rescheduleMeeting(idRes);
-    if (idEdit) loadMeetingToForm(idEdit);
+    if (idEdit) {
+      loadMeetingToForm(idEdit);
+      scrollToMeetingForm();
+    }
     if (idDelete) await deleteMeeting(idDelete);
+    if (idCopyLink) {
+      const row = filteredMeetings.find((m) => m.id === idCopyLink);
+      if (row?.link) await copyToClipboard(row.link, 'Link copiado al portapapeles.');
+    }
+    if (idCopySummary) {
+      const row = filteredMeetings.find((m) => m.id === idCopySummary);
+      if (row) await copyToClipboard(buildMeetingSummary(row), 'Resumen copiado para compartir por WhatsApp.');
+    }
   });
 }
 

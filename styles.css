@@ -45,9 +45,6 @@ p {
 
 .topbar {
   padding: 16px 20px;
-  position: sticky;
-  top: 0;
-  z-index: 30;
   border-bottom: 1px solid #ffffff8a;
   background: rgba(249, 244, 255, 0.88);
 }
@@ -59,8 +56,7 @@ p {
 }
 
 .brand-logo {
-  width: 52px;
-  height: 52px;
+  width: 180px;
   object-fit: contain;
 }
 
@@ -480,6 +476,19 @@ textarea {
   text-decoration: none;
 }
 
+.link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-subtle {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #ffffff99;
+}
+
 .meeting-link.muted {
   color: #5f5f73;
   font-weight: 500;
@@ -610,6 +619,11 @@ textarea {
   align-items: center;
 }
 
+.footer .brand-logo {
+  width: 140px;
+  filter: grayscale(1) opacity(0.55);
+}
+
 .footer-brand p {
   color: var(--muted);
   font-size: 13px;
@@ -624,6 +638,32 @@ textarea {
   flex-wrap: wrap;
 }
 
+.fab-save {
+  position: fixed;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 50;
+}
+
+.scroll-arrows {
+  position: fixed;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  gap: 10px;
+  z-index: 50;
+}
+
+.scroll-arrows .btn {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.scroll-arrows .btn:hover {
+  transform: scale(1.08);
+}
+
 @media (max-width: 1080px) {
   .meetings-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -631,6 +671,11 @@ textarea {
 
   .grid-form {
     grid-template-columns: repeat(2, minmax(200px, 1fr));
+  }
+
+  .fab-save,
+  .scroll-arrows {
+    display: none;
   }
 }
 

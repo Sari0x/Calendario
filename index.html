@@ -19,10 +19,6 @@
     <header class="topbar glass">
       <div class="brand-wrap">
         <img src="img/Novo%20Hub%20Logo.png" alt="Novo Hub" class="brand-logo" />
-        <div>
-          <h1>Panel de Calendario</h1>
-          <p class="sub">Gestión visual de reuniones</p>
-        </div>
       </div>
 
       <div class="menu-actions">
@@ -93,7 +89,6 @@
         </div>
       </div>
       <div class="footer-meta">
-        <span><i class="bi bi-shield-check"></i> Experiencia iOS-like</span>
         <span><i class="bi bi-lightning-charge"></i> Agenda optimizada</span>
       </div>
     </footer>
@@ -101,8 +96,9 @@
     <dialog id="providersModal" class="modal">
       <form id="providersForm" class="modal-content">
         <h3>Nuevo proveedor</h3>
-        <label>Nombre <input id="providerName" type="text" required /></label>
-        <label>Imagen (URL) <input id="providerImage" type="url" required /></label>
+          <label>Nombre <input id="providerName" type="text" required /></label>
+        <label>Imagen (URL) <input id="providerImage" type="url" placeholder="https://..." /></label>
+        <label>o Subir imagen <input id="providerImageFile" type="file" accept="image/*" /></label>
         <div class="modal-list-wrap">
           <strong>Proveedores creados</strong>
           <div id="providersCreatedList" class="created-list"></div>
@@ -134,6 +130,13 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <button id="saveMeetingFloating" class="fab-save btn btn-pill btn-primary"><i class="bi bi-floppy"></i> Cargar evento</button>
+
+    <div class="scroll-arrows">
+      <button id="scrollUpBtn" class="btn btn-pill btn-soft"><i class="bi bi-arrow-up"></i></button>
+      <button id="scrollDownBtn" class="btn btn-pill btn-soft"><i class="bi bi-arrow-down"></i></button>
+    </div>
+
     <script type="module" src="./main.js"></script>
   </body>
 </html>

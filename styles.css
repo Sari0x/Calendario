@@ -20,7 +20,7 @@ body {
   margin: 0;
   color: var(--text);
   min-height: 100vh;
-  padding-top: 108px;
+  padding-top: 132px;
   background:
     radial-gradient(circle at 10% 12%, #ffffff 0%, #f2ebff 28%, #e6f0ff 54%, #ffe7d0 100%),
     radial-gradient(circle at 90% 5%, #f7f9ff 0%, #efe5ff 42%, #f8e7d5 100%);
@@ -92,6 +92,10 @@ p {
   padding: 0 16px 20px;
   display: grid;
   gap: 14px;
+}
+
+#meetingFormSection {
+  scroll-margin-top: 160px;
 }
 
 .card {
@@ -375,6 +379,15 @@ textarea {
   white-space: nowrap;
 }
 
+.quick-count {
+  background: #ebe9ff;
+  color: #4138d8;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .quick-filter.active {
   background: var(--blue-soft);
   color: #3e36dd;
@@ -417,7 +430,6 @@ textarea {
 .meeting-item.status-upcoming {
   background: linear-gradient(180deg, #e9e4ff 0%, #ddd3ff 100%);
   border: 1px solid #7f73ff;
-  animation: upcomingGlow 2.2s ease-in-out infinite;
 }
 
 .meeting-item.is-nearest {
@@ -499,6 +511,12 @@ textarea {
   border-color: #ff9f43;
   color: #6a2b00;
   font-weight: 800;
+}
+
+.countdown.nearest-countdown {
+  background: linear-gradient(90deg, #ffd8df 0%, #ffbcc8 100%);
+  border-color: #f44f72;
+  color: #7a1027;
   animation: upcomingAlertPulse 1.5s ease-in-out infinite;
 }
 
@@ -508,16 +526,6 @@ textarea {
   color: #7f3d00;
   font-weight: 800;
   white-space: nowrap;
-}
-
-.in-progress-badge {
-  margin-left: 6px;
-  background: #ff4f66;
-  color: #fff;
-  border-radius: 999px;
-  padding: 2px 7px;
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .providers-row {
@@ -614,6 +622,15 @@ textarea {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.btn-action,
+.btn-soft-radius {
+  border-radius: 12px;
+}
+
+.btn-action {
+  padding: 8px 12px;
 }
 
 .post-meeting-box {
@@ -832,7 +849,7 @@ textarea {
 }
 
 .upload-spinner {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   gap: 8px;
@@ -840,6 +857,10 @@ textarea {
   font-size: 13px;
   width: 100%;
   text-align: center;
+}
+
+.upload-spinner:not(.hidden) {
+  display: flex;
 }
 
 .next-meeting-counter {
@@ -894,6 +915,14 @@ textarea {
 }
 
 @media (max-width: 720px) {
+  body {
+    padding-top: 148px;
+  }
+
+  .container {
+    padding: 0 12px 16px;
+  }
+
   .meetings-list {
     grid-template-columns: 1fr;
   }
@@ -903,7 +932,8 @@ textarea {
   }
 
   .quick-filters-wrap {
-    overflow: hidden;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .quick-filters-fade {
@@ -919,5 +949,22 @@ textarea {
 
   .next-meeting-counter {
     display: none;
+  }
+
+  .filter {
+    width: 100%;
+  }
+
+  .filter input,
+  .filter select,
+  .filter button {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .footer {
+    margin: 14px 0 0;
+    width: 100%;
+    border-radius: 18px 18px 0 0;
   }
 }

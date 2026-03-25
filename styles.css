@@ -20,9 +20,10 @@ body {
   margin: 0;
   color: var(--text);
   min-height: 100vh;
+  padding-top: 108px;
   background:
-    radial-gradient(circle at 12% 6%, #ffffff 0%, #eef4ff 30%, #eef0ff 55%, #efe5ff 100%),
-    linear-gradient(145deg, #f4f8ff 0%, #f8f4ff 40%, #e9f2ff 100%);
+    radial-gradient(circle at 10% 12%, #ffffff 0%, #f2ebff 28%, #e6f0ff 54%, #ffe7d0 100%),
+    radial-gradient(circle at 90% 5%, #f7f9ff 0%, #efe5ff 42%, #f8e7d5 100%);
 }
 
 .glass {
@@ -45,11 +46,26 @@ p {
 
 .topbar {
   padding: 16px 20px;
-  position: sticky;
+  position: fixed;
+  left: 0;
+  right: 0;
   top: 0;
   z-index: 60;
   border-bottom: 1px solid #ffffff8a;
-  background: rgba(240, 245, 255, 0.9);
+  background: linear-gradient(120deg, #19182a 0%, #252341 55%, #2b2a4c 100%);
+  color: #f3f4ff;
+}
+
+.topbar .btn-soft,
+.topbar .btn-primary,
+.topbar .btn-ghost {
+  border-color: #4a4a78;
+  color: #ececff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.topbar .btn-primary {
+  background: linear-gradient(120deg, #6c67ff 0%, #5b7bff 100%);
 }
 
 .brand-wrap {
@@ -321,13 +337,28 @@ textarea {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.filter select {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  background: #fff;
+}
+
+.quick-filters-wrap {
+  position: relative;
 }
 
 .quick-filters {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 6px;
   margin-bottom: 12px;
+  scrollbar-width: thin;
 }
 
 .quick-filter {
@@ -341,6 +372,7 @@ textarea {
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .quick-filter.active {
@@ -353,6 +385,7 @@ textarea {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-height: 460px;
 }
 
 .meeting-item {
@@ -382,9 +415,16 @@ textarea {
 }
 
 .meeting-item.status-upcoming {
-  background: linear-gradient(180deg, #e8e2ff 0%, #dcd4ff 100%);
+  background: linear-gradient(180deg, #e9e4ff 0%, #ddd3ff 100%);
   border: 1px solid #7f73ff;
   animation: upcomingGlow 2.2s ease-in-out infinite;
+}
+
+.meeting-item.is-nearest {
+  background: linear-gradient(135deg, #d8e7ff 0%, #f0e2ff 45%, #ffe0c7 100%);
+  border: 2px solid #7a6bff;
+  box-shadow: 0 0 0 0 rgba(122, 107, 255, 0.4);
+  animation: nearestBreath 2.6s ease-in-out infinite;
 }
 
 .meeting-item.disabled {
@@ -396,6 +436,13 @@ textarea {
   justify-content: space-between;
   gap: 10px;
   align-items: flex-start;
+}
+
+.top-badges {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .badge {
@@ -425,6 +472,10 @@ textarea {
   background: #5348e4;
 }
 
+.badge.nearest {
+  background: #3b356f;
+}
+
 .meeting-duration,
 .meeting-note,
 .countdown {
@@ -441,6 +492,32 @@ textarea {
   width: fit-content;
   padding: 4px 8px;
   font-weight: 600;
+}
+
+.countdown.alert-upcoming {
+  background: linear-gradient(90deg, #ffdfc3 0%, #ffd3ae 100%);
+  border-color: #ff9f43;
+  color: #6a2b00;
+  font-weight: 800;
+  animation: upcomingAlertPulse 1.5s ease-in-out infinite;
+}
+
+.countdown.in-progress {
+  background: linear-gradient(90deg, #ffe2bf 0%, #ffd3a0 100%);
+  border-color: #ff9f43;
+  color: #7f3d00;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.in-progress-badge {
+  margin-left: 6px;
+  background: #ff4f66;
+  color: #fff;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .providers-row {
@@ -536,6 +613,16 @@ textarea {
 .meeting-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.post-meeting-box {
+  border: 1px dashed #bdb8d8;
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  background: #ffffff85;
 }
 
 .pagination {
@@ -594,6 +681,12 @@ textarea {
   animation: spin 0.9s linear infinite;
 }
 
+.spinner.mini {
+  width: 17px;
+  height: 17px;
+  border-width: 2px;
+}
+
 .hidden {
   display: none;
 }
@@ -625,6 +718,12 @@ textarea {
 .created-item .name {
   flex: 1;
   font-size: 13px;
+  display: grid;
+}
+
+.created-item .name small {
+  font-size: 11px;
+  color: #6e6b87;
 }
 
 .btn-xs {
@@ -675,18 +774,25 @@ textarea {
   position: fixed;
   right: 14px;
   top: 50%;
+  bottom: auto;
   transform: translateY(-50%);
   display: grid;
-  gap: 12px;
+  gap: 10px;
   z-index: 50;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid #dbe3f0;
-  border-radius: 999px;
-  padding: 8px;
+  background: rgba(247, 241, 255, 0.85);
+  border: 1px solid #d5d0ed;
+  border-radius: 14px;
+  padding: 6px;
 }
 
 .scroll-arrows .btn {
   transition: transform 0.2s ease, opacity 0.2s ease;
+  width: 38px;
+  height: 38px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 12px;
+  background: #ffffff;
 }
 
 .scroll-arrows .btn:hover {
@@ -701,6 +807,76 @@ textarea {
   50% {
     border-color: #4f9cff;
   }
+}
+
+@keyframes nearestBreath {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(122, 107, 255, 0.28);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(122, 107, 255, 0.1);
+    transform: scale(1.01);
+  }
+}
+
+@keyframes upcomingAlertPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 159, 67, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 159, 67, 0.08);
+  }
+}
+
+.upload-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #4f4b7b;
+  font-size: 13px;
+  width: 100%;
+  text-align: center;
+}
+
+.next-meeting-counter {
+  margin-left: 10px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.quick-filters-fade {
+  display: none;
+}
+
+.swal-ios {
+  border-radius: 24px !important;
+  box-shadow: 0 16px 60px rgba(23, 22, 36, 0.22) !important;
+}
+
+.swal-ios .swal2-title {
+  font-size: 22px !important;
+}
+
+.swal-ios-btn {
+  border-radius: 999px !important;
+  padding: 10px 18px !important;
+}
+
+.swal-ios-btn-cancel {
+  color: #272538 !important;
 }
 
 @media (max-width: 1080px) {
@@ -724,5 +900,24 @@ textarea {
 
   .grid-form {
     grid-template-columns: 1fr;
+  }
+
+  .quick-filters-wrap {
+    overflow: hidden;
+  }
+
+  .quick-filters-fade {
+    display: block;
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 12px;
+    width: 44px;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.95) 100%);
+  }
+
+  .next-meeting-counter {
+    display: none;
   }
 }

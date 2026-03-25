@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calendario de Reuniones</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23007aff'/%3E%3Cpath d='M18 16h28v30H18z' fill='white'/%3E%3Cpath d='M18 24h28' stroke='%23007aff' stroke-width='4'/%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar glass">
+      <div>
+        <h1>Panel de Calendario</h1>
+        <p class="sub">Estilo iOS • Flatpickr en español • Realtime Database</p>
+      </div>
+      <div class="menu-actions">
+        <button id="openProvidersModal" class="btn btn-pill btn-soft">+ Proveedor</button>
+        <button id="openParticipantsModal" class="btn btn-pill btn-soft">+ Participante</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <div id="appNotice" class="notice hidden"></div>
+
+      <section class="card glass">
+        <div class="card-header">
+          <h2>Nueva reunión</h2>
+          <div class="header-actions"><button id="cancelEdit" class="btn btn-pill btn-ghost hidden">Cancelar edición</button><button id="saveMeeting" class="btn btn-pill btn-primary">Cargar evento</button></div>
+        </div>
+
+        <div class="grid-form">
+          <label>Día (Flatpickr)<input id="meetingDate" type="text" placeholder="Seleccionar fecha" /></label>
+          <label>Hora de inicio<input id="meetingTime" type="time" /></label>
+          <label>Duración (min)<input id="meetingDuration" type="number" min="15" step="15" value="60" /></label>
+          <label>Proveedores participantes<div id="providersPicker" class="multi-picker"></div></label>
+          <label>Participantes<div id="participantsPicker" class="multi-picker"></div></label>
+          <label>Nota<textarea id="meetingNote" rows="3" placeholder="Agregar nota"></textarea></label>
+          <label>Link (opcional)<input id="meetingLink" type="url" placeholder="https://..." /></label>
+        </div>
+      </section>
+
+      <section class="card glass">
+        <div class="card-header">
+          <h2>Reuniones</h2>
+          <div class="filter">
+            <input id="filterDate" type="text" placeholder="Filtrar por fecha" />
+            <button id="clearFilter" class="btn btn-pill btn-ghost">Limpiar</button>
+          </div>
+        </div>
+
+        <div id="spinner" class="spinner-wrap hidden"><div class="spinner"></div></div>
+        <div id="meetingsList" class="meetings-list"></div>
+
+        <div class="pagination">
+          <button id="prevPage" class="btn btn-pill btn-ghost">Anterior</button>
+          <span id="pageInfo">Página 1</span>
+          <button id="nextPage" class="btn btn-pill btn-ghost">Siguiente</button>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="providersModal" class="modal">
+      <form id="providersForm" class="modal-content">
+        <h3>Nuevo proveedor</h3>
+        <label>Nombre <input id="providerName" type="text" required /></label>
+        <label>Imagen (URL) <input id="providerImage" type="url" required /></label>
+        <div class="modal-list-wrap">
+          <strong>Proveedores creados</strong>
+          <div id="providersCreatedList" class="created-list"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="cancelProvider" class="btn btn-pill btn-ghost">Cancelar</button>
+          <button type="submit" id="saveProvider" class="btn btn-pill btn-primary">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="participantsModal" class="modal">
+      <form id="participantsForm" class="modal-content">
+        <h3>Nuevo participante</h3>
+        <label>Nombre <input id="participantName" type="text" required /></label>
+        <label>Apellido <input id="participantLastName" type="text" required /></label>
+        <label>Email <input id="participantEmail" type="email" required /></label>
+        <div class="modal-list-wrap">
+          <strong>Participantes creados</strong>
+          <div id="participantsCreatedList" class="created-list"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="cancelParticipant" class="btn btn-pill btn-ghost">Cancelar</button>
+          <button type="submit" id="saveParticipant" class="btn btn-pill btn-primary">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

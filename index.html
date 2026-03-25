@@ -10,48 +10,63 @@
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="topbar glass">
-      <div>
-        <h1>Panel de Calendario</h1>
+      <div class="brand-wrap">
+        <img src="img/Novo%20Hub%20Logo.png" alt="Novo Hub" class="brand-logo" />
       </div>
+
       <div class="menu-actions">
-        <button id="openProvidersModal" class="btn btn-pill btn-soft">+ Proveedor</button>
-        <button id="openParticipantsModal" class="btn btn-pill btn-soft">+ Participante</button>
+        <button id="openMeetingForm" class="btn btn-pill btn-primary"><i class="bi bi-plus-circle"></i> Nuevo evento</button>
+        <button id="openProvidersModal" class="btn btn-pill btn-soft"><i class="bi bi-building-add"></i> Proveedor</button>
+        <button id="openParticipantsModal" class="btn btn-pill btn-soft"><i class="bi bi-person-plus"></i> Participante</button>
       </div>
     </header>
 
     <main class="container">
       <div id="appNotice" class="notice hidden"></div>
 
-      <section class="card glass">
+      <section id="meetingFormSection" class="card glass collapsed">
         <div class="card-header">
-          <h2>Nueva reunión</h2>
-          <div class="header-actions"><button id="cancelEdit" class="btn btn-pill btn-ghost hidden">Cancelar edición</button><button id="saveMeeting" class="btn btn-pill btn-primary">Cargar evento</button></div>
+          <h2><i class="bi bi-calendar2-plus"></i> Nueva reunión</h2>
+          <div class="header-actions">
+            <button id="cancelEdit" class="btn btn-pill btn-ghost hidden"><i class="bi bi-x-circle"></i> Cancelar edición</button>
+            <button id="saveMeeting" class="btn btn-pill btn-primary"><i class="bi bi-floppy"></i> Cargar evento</button>
+          </div>
         </div>
 
         <div class="grid-form">
-          <label>Día<input id="meetingDate" type="text" placeholder="Seleccionar fecha" /></label>
-          <label>Hora de inicio<input id="meetingTime" type="time" /></label>
-          <label>Duración (min)<input id="meetingDuration" type="number" min="15" step="15" value="60" /></label>
-          <label>Proveedores participantes<div id="providersPicker" class="multi-picker"></div></label>
-          <label>Participantes<div id="participantsPicker" class="multi-picker"></div></label>
-          <label>Nota<textarea id="meetingNote" rows="3" placeholder="Agregar nota"></textarea></label>
-          <label>Link (opcional)<input id="meetingLink" type="url" placeholder="https://..." /></label>
+          <label><i class="bi bi-calendar-event"></i> Día<input id="meetingDate" type="text" placeholder="Seleccionar fecha" /></label>
+          <label><i class="bi bi-clock"></i> Hora de inicio<input id="meetingTime" type="time" /></label>
+          <label><i class="bi bi-hourglass-split"></i> Duración (min)<input id="meetingDuration" type="number" min="15" step="15" value="60" /></label>
+          <label><i class="bi bi-collection"></i> Proveedores participantes<div id="providersPicker" class="multi-picker"></div></label>
+          <label><i class="bi bi-people"></i> Participantes<div id="participantsPicker" class="multi-picker"></div></label>
+          <label class="full-col"><i class="bi bi-journal-text"></i> Nota<textarea id="meetingNote" rows="3" placeholder="Agregar nota"></textarea></label>
+          <label class="full-col"><i class="bi bi-link-45deg"></i> Link (opcional)<input id="meetingLink" type="url" placeholder="https://..." /></label>
         </div>
       </section>
 
       <section class="card glass">
-        <div class="card-header">
-          <h2>Reuniones</h2>
+        <div class="card-header wrap">
+          <h2><i class="bi bi-kanban"></i> Reuniones</h2>
           <div class="filter">
             <input id="filterDate" type="text" placeholder="Filtrar por fecha" />
-            <button id="clearFilter" class="btn btn-pill btn-ghost">Limpiar</button>
+            <button id="clearFilter" class="btn btn-pill btn-ghost"><i class="bi bi-eraser"></i> Limpiar</button>
           </div>
+        </div>
+
+        <div class="quick-filters" id="quickFilters">
+          <button class="quick-filter active" data-filter="all"><i class="bi bi-grid"></i> Todas</button>
+          <button class="quick-filter" data-filter="in_progress"><i class="bi bi-play-circle"></i> En curso</button>
+          <button class="quick-filter" data-filter="today"><i class="bi bi-sun"></i> Hoy</button>
+          <button class="quick-filter" data-filter="week"><i class="bi bi-calendar-week"></i> Esta semana</button>
+          <button class="quick-filter" data-filter="next_week"><i class="bi bi-calendar2-week"></i> Próxima semana</button>
+          <button class="quick-filter" data-filter="finished"><i class="bi bi-check2-circle"></i> Finalizadas</button>
         </div>
 
         <div id="spinner" class="spinner-wrap hidden"><div class="spinner"></div></div>
@@ -65,11 +80,25 @@
       </section>
     </main>
 
+    <footer class="footer glass">
+      <div class="footer-brand">
+        <img src="img/Novo%20Hub%20Logo.png" alt="Novo Hub" class="brand-logo" />
+        <div>
+          <strong>Novo Hub Calendario</strong>
+          <p>Planificación profesional de reuniones.</p>
+        </div>
+      </div>
+      <div class="footer-meta">
+        <span><i class="bi bi-lightning-charge"></i> Agenda optimizada</span>
+      </div>
+    </footer>
+
     <dialog id="providersModal" class="modal">
       <form id="providersForm" class="modal-content">
         <h3>Nuevo proveedor</h3>
-        <label>Nombre <input id="providerName" type="text" required /></label>
-        <label>Imagen (URL) <input id="providerImage" type="url" required /></label>
+          <label>Nombre <input id="providerName" type="text" required /></label>
+        <label>Imagen (URL) <input id="providerImage" type="url" placeholder="https://..." /></label>
+        <label>o Subir imagen <input id="providerImageFile" type="file" accept="image/*" /></label>
         <div class="modal-list-wrap">
           <strong>Proveedores creados</strong>
           <div id="providersCreatedList" class="created-list"></div>
@@ -101,6 +130,12 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <div class="scroll-arrows">
+      <button id="scrollUpBtn" class="btn btn-pill btn-soft"><i class="bi bi-arrow-up"></i></button>
+      <button id="scrollDownBtn" class="btn btn-pill btn-soft"><i class="bi bi-arrow-down"></i></button>
+    </div>
+
     <script type="module" src="./main.js"></script>
   </body>
 </html>

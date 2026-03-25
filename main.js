@@ -40,6 +40,13 @@ let currentPage = 1;
 let totalPages = 1;
 let activeFilterDate = null;
 let editingMeetingId = null;
+let editingProviderId = null;
+let editingParticipantId = null;
+
+const pickerUiState = {
+  provider: { query: '', open: false },
+  participant: { query: '', open: false },
+};
 
 const providerIcons = {
   meet: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/Google_Meet_icon_%282020%29.svg/960px-Google_Meet_icon_%282020%29.svg.png',
@@ -111,25 +118,76 @@ async function saveCollectionItem(name, data) {
   await set(push(ref(rtdb, name)), { ...data, createdAt: new Date().toISOString() });
 }
 
-function buildMultiPicker(items, selectedIds, type) {
-  return items
-    .map((item) => {
-      const checked = selectedIds.has(item.id) ? 'checked' : '';
-      const visual =
-        type === 'provider'
-          ? `<img src="${item.image}" class="provider-img" alt="${item.name}" />`
-          : `<span class="avatar" style="background:${item.color}">${item.initials}</span>`;
-      const label = type === 'provider' ? item.name : `${item.name} ${item.lastName}`;
-      return `<label class="option-chip">${visual}<span class="chip-text">${label}</span><input type="checkbox" data-${type}="${item.id}" ${checked}/></label>`;
-    })
-    .join('');
+function getPickerMeta(type) {
+  const isProvider = type === 'provider';
+  return {
+    type,
+    isProvider,
+    containerId: isProvider ? 'providersPicker' : 'participantsPicker',
+    list: isProvider ? providers : participants,
+    openLabel: isProvider ? '+ Proveedor' : '+ Participante',
+    addLabel: isProvider ? '+ Agregar nuevo proveedor' : '+ Agregar nuevo participante',
+  };
+}
+
+function getSelectedIds(type) {
+  const { containerId } = getPickerMeta(type);
+  const selected = ($(containerId).dataset.selected || '').split(',').filter(Boolean);
+  return new Set(selected);
+}
+
+function setSelectedIds(type, idsSet) {
+  const { containerId } = getPickerMeta(type);
+  $(containerId).dataset.selected = [...idsSet].join(',');
+}
+
+function visualizeItem(item, type) {
+  if (type === 'provider') {
+    return `<img src="${item.image}" class="provider-img" alt="${item.name}" />`;
+  }
+  return `<span class="avatar" style="background:${item.color}">${item.initials}</span>`;
+}
+
+function itemLabel(item, type) {
+  return type === 'provider' ? item.name : `${item.name} ${item.lastName}`;
+}
+
+function buildSuggestionRow(item, type) {
+  return `<button type="button" class="picker-suggestion" data-select-${type}="${item.id}">${visualizeItem(item, type)}<span>${itemLabel(item, type)}</span></button>`;
+}
+
+function buildSelectedPill(item, type) {
+  return `<span class="option-chip picker-pill">${visualizeItem(item, type)}<span class="chip-text">${itemLabel(item, type)}</span><button type="button" class="pill-remove" aria-label="Quitar" data-remove-${type}="${item.id}">×</button></span>`;
+}
+
+function buildPicker(type) {
+  const { containerId, list, addLabel } = getPickerMeta(type);
+  const { query, open } = pickerUiState[type];
+  const selectedIds = getSelectedIds(type);
+  const selectedItems = list.filter((item) => selectedIds.has(item.id));
+  const availableItems = list.filter((item) => {
+    if (selectedIds.has(item.id)) return false;
+    return itemLabel(item, type).toLowerCase().includes(query.toLowerCase());
+  });
+
+  const suggestions = availableItems.map((item) => buildSuggestionRow(item, type)).join('');
+  const noItems = '<div class="picker-empty">No hay coincidencias.</div>';
+
+  $(containerId).innerHTML = `
+    <div class="picker-shell ${open ? 'is-open' : ''}" data-picker-shell="${type}">
+      <div class="picker-selected-wrap">${selectedItems.map((item) => buildSelectedPill(item, type)).join('')}</div>
+      <input type="text" class="picker-input" data-picker-input="${type}" placeholder="Escribí para buscar..." value="${query}" />
+      <div class="picker-suggestions ${open ? '' : 'hidden'}" data-picker-suggestions="${type}">
+        ${suggestions || noItems}
+        <button type="button" class="picker-suggestion picker-add" data-add-${type}="true">${addLabel}</button>
+      </div>
+    </div>
+  `;
 }
 
 function renderPickers() {
-  const selectedProviders = new Set(($('providersPicker').dataset.selected || '').split(',').filter(Boolean));
-  const selectedParticipants = new Set(($('participantsPicker').dataset.selected || '').split(',').filter(Boolean));
-  $('providersPicker').innerHTML = buildMultiPicker(providers, selectedProviders, 'provider');
-  $('participantsPicker').innerHTML = buildMultiPicker(participants, selectedParticipants, 'participant');
+  buildPicker('provider');
+  buildPicker('participant');
   renderCreatedLists();
 }
 
@@ -137,7 +195,8 @@ function renderCreatedLists() {
   $('providersCreatedList').innerHTML = providers.length
     ? providers
         .map(
-          (p) => `<div class="created-item"><img src="${p.image}" class="provider-img" alt="${p.name}"/><span class="name">${p.name}</span><button class="btn btn-ghost btn-xs" data-delete-provider="${p.id}">Eliminar</button></div>`,
+          (p) =>
+            `<div class="created-item"><img src="${p.image}" class="provider-img" alt="${p.name}"/><span class="name">${p.name}</span><button class="btn btn-ghost btn-xs" data-edit-provider="${p.id}">Editar</button><button class="btn btn-ghost btn-xs" data-delete-provider="${p.id}">Eliminar</button></div>`,
         )
         .join('')
     : '<small>Sin proveedores creados.</small>';
@@ -145,10 +204,58 @@ function renderCreatedLists() {
   $('participantsCreatedList').innerHTML = participants.length
     ? participants
         .map(
-          (p) => `<div class="created-item"><span class="avatar" style="background:${p.color}">${p.initials}</span><span class="name">${p.name} ${p.lastName}</span><button class="btn btn-ghost btn-xs" data-delete-participant="${p.id}">Eliminar</button></div>`,
+          (p) =>
+            `<div class="created-item"><span class="avatar" style="background:${p.color}">${p.initials}</span><span class="name">${p.name} ${p.lastName}</span><button class="btn btn-ghost btn-xs" data-edit-participant="${p.id}">Editar</button><button class="btn btn-ghost btn-xs" data-delete-participant="${p.id}">Eliminar</button></div>`,
         )
         .join('')
     : '<small>Sin participantes creados.</small>';
+}
+
+function resetProviderForm() {
+  editingProviderId = null;
+  $('providersForm').reset();
+  $('providersForm').querySelector('h3').textContent = 'Nuevo proveedor';
+  $('saveProvider').textContent = 'Guardar';
+}
+
+function resetParticipantForm() {
+  editingParticipantId = null;
+  $('participantsForm').reset();
+  $('participantsForm').querySelector('h3').textContent = 'Nuevo participante';
+  $('saveParticipant').textContent = 'Guardar';
+}
+
+function openProviderModal(editId = null) {
+  resetProviderForm();
+  renderCreatedLists();
+  if (editId) {
+    const row = providers.find((p) => p.id === editId);
+    if (row) {
+      editingProviderId = editId;
+      $('providerName').value = row.name || '';
+      $('providerImage').value = row.image || '';
+      $('providersForm').querySelector('h3').textContent = 'Editar proveedor';
+      $('saveProvider').textContent = 'Actualizar';
+    }
+  }
+  $('providersModal').showModal();
+}
+
+function openParticipantModal(editId = null) {
+  resetParticipantForm();
+  renderCreatedLists();
+  if (editId) {
+    const row = participants.find((p) => p.id === editId);
+    if (row) {
+      editingParticipantId = editId;
+      $('participantName').value = row.name || '';
+      $('participantLastName').value = row.lastName || '';
+      $('participantEmail').value = row.email || '';
+      $('participantsForm').querySelector('h3').textContent = 'Editar participante';
+      $('saveParticipant').textContent = 'Actualizar';
+    }
+  }
+  $('participantsModal').showModal();
 }
 
 function badge(label, cls) {
@@ -159,12 +266,12 @@ function meetingCard(meeting) {
   const status = meetingStatus(meeting);
   const disabled = status === 'vencida';
   const providersHtml = (meeting.providers || [])
-    .map((p) => `<span class="option-chip"><img class="provider-img" src="${p.image}" alt="${p.name}"/>${p.name}</span>`)
+    .map((p) => `<span class="option-chip"><img class="provider-img" src="${p.image}" alt="${p.name}"/><span class="chip-text">${p.name}</span></span>`)
     .join('');
   const participantsHtml = (meeting.participants || [])
     .map(
       (p) =>
-        `<span class="option-chip"><span class="avatar" style="background:${p.color}">${p.initials}</span>${p.name} ${p.lastName}</span>`,
+        `<span class="option-chip"><span class="avatar" style="background:${p.color}">${p.initials}</span><span class="chip-text">${p.name} ${p.lastName}</span></span>`,
     )
     .join('');
 
@@ -240,10 +347,14 @@ async function onSaveProvider(e) {
   const image = $('providerImage').value.trim();
   if (!name || !image) return;
 
-  await saveCollectionItem('providers', { name, image });
-  $('providerName').value = '';
-  $('providerImage').value = '';
+  if (editingProviderId) {
+    await update(ref(rtdb, `providers/${editingProviderId}`), { name, image, updatedAt: new Date().toISOString() });
+  } else {
+    await saveCollectionItem('providers', { name, image });
+  }
+
   $('providersModal').close();
+  resetProviderForm();
   await loadReferences();
 }
 
@@ -254,18 +365,22 @@ async function onSaveParticipant(e) {
   const email = $('participantEmail').value.trim();
   if (!name || !lastName || !email) return;
 
-  await saveCollectionItem('participants', {
+  const payload = {
     name,
     lastName,
     email,
     initials: initials(name, lastName),
     color: randomColor(`${name}${lastName}${email}`),
-  });
+  };
 
-  $('participantName').value = '';
-  $('participantLastName').value = '';
-  $('participantEmail').value = '';
+  if (editingParticipantId) {
+    await update(ref(rtdb, `participants/${editingParticipantId}`), { ...payload, updatedAt: new Date().toISOString() });
+  } else {
+    await saveCollectionItem('participants', payload);
+  }
+
   $('participantsModal').close();
+  resetParticipantForm();
   await loadReferences();
 }
 
@@ -276,8 +391,8 @@ async function onSaveMeeting() {
   const startAt = new Date(`${day}T${time}`);
   if (Number.isNaN(startAt.getTime())) return alert('Fecha/hora inválida');
 
-  const selectedProviderIds = ($('providersPicker').dataset.selected || '').split(',').filter(Boolean);
-  const selectedParticipantIds = ($('participantsPicker').dataset.selected || '').split(',').filter(Boolean);
+  const selectedProviderIds = [...getSelectedIds('provider')];
+  const selectedParticipantIds = [...getSelectedIds('participant')];
 
   const payload = {
     startAt: startAt.toISOString(),
@@ -302,8 +417,12 @@ async function onSaveMeeting() {
   $('meetingDuration').value = '60';
   $('meetingNote').value = '';
   $('meetingLink').value = '';
-  $('providersPicker').dataset.selected = '';
-  $('participantsPicker').dataset.selected = '';
+  setSelectedIds('provider', new Set());
+  setSelectedIds('participant', new Set());
+  pickerUiState.provider.query = '';
+  pickerUiState.participant.query = '';
+  pickerUiState.provider.open = false;
+  pickerUiState.participant.open = false;
   editingMeetingId = null;
   $('cancelEdit').classList.add('hidden');
   $('saveMeeting').textContent = 'Cargar evento';
@@ -321,8 +440,8 @@ function loadMeetingToForm(id) {
   $('meetingDuration').value = String(row.duration || 60);
   $('meetingNote').value = row.note || '';
   $('meetingLink').value = row.link || '';
-  $('providersPicker').dataset.selected = (row.providers || []).map((p) => p.id).join(',');
-  $('participantsPicker').dataset.selected = (row.participants || []).map((p) => p.id).join(',');
+  setSelectedIds('provider', new Set((row.providers || []).map((p) => p.id)));
+  setSelectedIds('participant', new Set((row.participants || []).map((p) => p.id)));
   editingMeetingId = id;
   $('cancelEdit').classList.remove('hidden');
   $('saveMeeting').textContent = 'Guardar cambios';
@@ -349,7 +468,6 @@ async function rescheduleMeeting(id) {
 
   await fetchMeetings();
 }
-
 
 async function deleteProvider(id) {
   const result = await Swal.fire({
@@ -379,11 +497,78 @@ async function deleteParticipant(id) {
   await loadReferences();
 }
 
+function bindPickerEvents(type) {
+  const { containerId } = getPickerMeta(type);
+  const container = $(containerId);
+
+  container.addEventListener('click', (e) => {
+    const add = e.target.closest(`[data-add-${type}]`);
+    const select = e.target.closest(`[data-select-${type}]`);
+    const removeBtn = e.target.closest(`[data-remove-${type}]`);
+
+    if (add) {
+      pickerUiState[type].open = false;
+      pickerUiState[type].query = '';
+      renderPickers();
+      if (type === 'provider') openProviderModal();
+      else openParticipantModal();
+      return;
+    }
+
+    if (select) {
+      const id = select.dataset[`select${type[0].toUpperCase()}${type.slice(1)}`];
+      const selected = getSelectedIds(type);
+      selected.add(id);
+      setSelectedIds(type, selected);
+      pickerUiState[type].query = '';
+      pickerUiState[type].open = true;
+      renderPickers();
+      $(containerId).querySelector(`[data-picker-input="${type}"]`)?.focus();
+      return;
+    }
+
+    if (removeBtn) {
+      const id = removeBtn.dataset[`remove${type[0].toUpperCase()}${type.slice(1)}`];
+      const selected = getSelectedIds(type);
+      selected.delete(id);
+      setSelectedIds(type, selected);
+      renderPickers();
+    }
+  });
+
+  container.addEventListener('input', (e) => {
+    if (!e.target.matches(`[data-picker-input="${type}"]`)) return;
+    pickerUiState[type].query = e.target.value;
+    pickerUiState[type].open = true;
+    renderPickers();
+  });
+
+  container.addEventListener('focusin', (e) => {
+    if (!e.target.matches(`[data-picker-input="${type}"]`)) return;
+    pickerUiState[type].open = true;
+    renderPickers();
+  });
+
+  container.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (container.contains(document.activeElement)) return;
+      pickerUiState[type].open = false;
+      renderPickers();
+    }, 120);
+  });
+}
+
 function bindEvents() {
-  $('openProvidersModal').addEventListener('click', () => { renderCreatedLists(); $('providersModal').showModal(); });
-  $('openParticipantsModal').addEventListener('click', () => { renderCreatedLists(); $('participantsModal').showModal(); });
-  $('cancelProvider').addEventListener('click', () => $('providersModal').close());
-  $('cancelParticipant').addEventListener('click', () => $('participantsModal').close());
+  $('openProvidersModal').addEventListener('click', () => openProviderModal());
+  $('openParticipantsModal').addEventListener('click', () => openParticipantModal());
+  $('cancelProvider').addEventListener('click', () => {
+    $('providersModal').close();
+    resetProviderForm();
+  });
+  $('cancelParticipant').addEventListener('click', () => {
+    $('participantsModal').close();
+    resetParticipantForm();
+  });
 
   $('providersForm').addEventListener('submit', onSaveProvider);
   $('participantsForm').addEventListener('submit', onSaveParticipant);
@@ -394,22 +579,21 @@ function bindEvents() {
     $('saveMeeting').textContent = 'Cargar evento';
   });
 
-  $('providersPicker').addEventListener('change', () => {
-    $('providersPicker').dataset.selected = [...document.querySelectorAll('[data-provider]:checked')].map((e) => e.dataset.provider).join(',');
-  });
-  $('participantsPicker').addEventListener('change', () => {
-    $('participantsPicker').dataset.selected = [...document.querySelectorAll('[data-participant]:checked')].map((e) => e.dataset.participant).join(',');
-  });
-
+  bindPickerEvents('provider');
+  bindPickerEvents('participant');
 
   $('providersCreatedList').addEventListener('click', async (e) => {
-    const id = e.target?.dataset?.deleteProvider;
-    if (id) await deleteProvider(id);
+    const idDelete = e.target?.dataset?.deleteProvider;
+    const idEdit = e.target?.dataset?.editProvider;
+    if (idEdit) openProviderModal(idEdit);
+    if (idDelete) await deleteProvider(idDelete);
   });
 
   $('participantsCreatedList').addEventListener('click', async (e) => {
-    const id = e.target?.dataset?.deleteParticipant;
-    if (id) await deleteParticipant(id);
+    const idDelete = e.target?.dataset?.deleteParticipant;
+    const idEdit = e.target?.dataset?.editParticipant;
+    if (idEdit) openParticipantModal(idEdit);
+    if (idDelete) await deleteParticipant(idDelete);
   });
 
   $('clearFilter').addEventListener('click', async () => {

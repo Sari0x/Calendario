@@ -75,7 +75,10 @@ function showNotice(message) {
 function scrollToMeetingForm() {
   const formSection = $('meetingFormSection');
   formSection.classList.remove('collapsed');
-  formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const headerHeight = document.querySelector('.topbar')?.offsetHeight || 0;
+  const safeGap = 16;
+  const top = formSection.getBoundingClientRect().top + window.scrollY - headerHeight - safeGap;
+  window.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
 }
 
 function randomColor(seed) {
@@ -326,7 +329,14 @@ function meetingCard(meeting) {
 
   const linkType = parseLinkType(meeting.link);
   const linkIcon = linkType ? `<img class="provider-inline-icon" src="${providerIcons[linkType]}" alt="${linkType}"/>` : '<i class="bi bi-camera-video"></i>';
-  const countdown = !isFinished ? `<span class="countdown" data-countdown="${meeting.startAt}">${countdownLabel(meeting.startAt)}</span>` : '';
+  let countdown = '';
+  if (!isFinished) {
+    if (status === 'in_progress') {
+      countdown = '<span class="countdown in-progress"><i class="bi bi-broadcast-pin"></i> En curso ahora</span>';
+    } else {
+      countdown = `<span class="countdown alert-upcoming" data-countdown="${meeting.startAt}"><i class="bi bi-alarm"></i> ${countdownLabel(meeting.startAt)}</span>`;
+    }
+  }
 
   return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''} ${isNearest ? 'is-nearest' : ''}">
     <div class="meeting-top">
@@ -416,9 +426,9 @@ function startCountdowns() {
   if (countdownInterval) window.clearInterval(countdownInterval);
 
   const updateCountdowns = () => {
-    document.querySelectorAll('[data-countdown]').forEach((el) => {
+    document.querySelectorAll('.countdown.alert-upcoming[data-countdown]').forEach((el) => {
       const meetingStart = el.dataset.countdown;
-      if (meetingStart) el.textContent = countdownLabel(meetingStart);
+      if (meetingStart) el.innerHTML = `<i class="bi bi-alarm"></i> ${countdownLabel(meetingStart)}`;
     });
   };
 

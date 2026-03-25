@@ -454,6 +454,21 @@ textarea {
   font-weight: 600;
 }
 
+.countdown.alert-upcoming {
+  background: linear-gradient(90deg, #ffdfc3 0%, #ffd3ae 100%);
+  border-color: #ff9f43;
+  color: #6a2b00;
+  font-weight: 800;
+  animation: upcomingAlertPulse 1.5s ease-in-out infinite;
+}
+
+.countdown.in-progress {
+  background: linear-gradient(90deg, #ffe2bf 0%, #ffd3a0 100%);
+  border-color: #ff9f43;
+  color: #7f3d00;
+  font-weight: 800;
+}
+
 .providers-row {
   display: flex;
   gap: 8px;
@@ -690,12 +705,12 @@ textarea {
 
 .scroll-arrows {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
-  top: auto;
-  transform: none;
-  display: flex;
-  gap: 8px;
+  right: 14px;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  display: grid;
+  gap: 10px;
   z-index: 50;
   background: rgba(247, 241, 255, 0.85);
   border: 1px solid #d5d0ed;
@@ -736,6 +751,16 @@ textarea {
   50% {
     box-shadow: 0 0 0 8px rgba(122, 107, 255, 0.1);
     transform: scale(1.01);
+  }
+}
+
+@keyframes upcomingAlertPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 159, 67, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 159, 67, 0.08);
   }
 }
 

@@ -143,7 +143,7 @@ function setSelectedIds(type, idsSet) {
 
 function visualizeItem(item, type) {
   if (type === 'provider') {
-    return `<img src="${item.image}" class="provider-img" alt="${item.name}" />`;
+    return `<span class="provider-dot">${(item.name?.[0] || '?').toUpperCase()}</span>`;
   }
   return `<span class="avatar" style="background:${item.color}">${item.initials}</span>`;
 }

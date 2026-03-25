@@ -47,6 +47,7 @@ let activeQuickFilter = 'all';
 let editingMeetingId = null;
 let editingProviderId = null;
 let editingParticipantId = null;
+let nearestMeetingId = null;
 
 const pickerUiState = {
   provider: { query: '', open: false },
@@ -314,6 +315,7 @@ function meetingCard(meeting) {
   const status = meetingStatus(meeting);
   const isFinished = status === 'finished';
   const meta = statusMeta(status);
+  const isNearest = meeting.id === nearestMeetingId;
 
   const providerList = (meeting.providers || [])
     .map((p) => `<img class="provider-thumb" src="${p.image}" alt="${p.name}" title="${p.name}" />`)
@@ -326,7 +328,7 @@ function meetingCard(meeting) {
   const linkIcon = linkType ? `<img class="provider-inline-icon" src="${providerIcons[linkType]}" alt="${linkType}"/>` : '<i class="bi bi-camera-video"></i>';
   const countdown = !isFinished ? `<span class="countdown" data-countdown="${meeting.startAt}">${countdownLabel(meeting.startAt)}</span>` : '';
 
-  return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''}">
+  return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''} ${isNearest ? 'is-nearest' : ''}">
     <div class="meeting-top">
       <strong><i class="bi bi-clock-history"></i> ${esFmt.format(new Date(meeting.startAt))}</strong>
       <span class="badge ${meta.cls}"><i class="bi ${meta.icon}"></i> ${meta.text}</span>
@@ -387,7 +389,21 @@ function sortMeetings(rows) {
   return rows.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
 }
 
+function getNearestMeetingId(rows) {
+  const now = Date.now();
+  const activeRows = rows.filter((row) => meetingStatus(row) !== 'finished');
+  if (!activeRows.length) return null;
+
+  const upcoming = activeRows.filter((row) => new Date(row.startAt).getTime() >= now);
+  if (upcoming.length) {
+    return upcoming.sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0].id;
+  }
+
+  return activeRows.sort((a, b) => new Date(b.startAt) - new Date(a.startAt))[0].id;
+}
+
 function renderCurrentPage() {
+  nearestMeetingId = getNearestMeetingId(filteredMeetings);
   meetings = paginateRows(filteredMeetings);
   meetingsList.innerHTML = meetings.length ? meetings.map(meetingCard).join('') : '<p>No hay reuniones para este filtro.</p>';
   pageInfo.textContent = `Página ${currentPage} de ${totalPages}`;
@@ -448,9 +464,16 @@ async function onSaveProvider(e) {
 
   let image = imageUrl;
   if (imageFile) {
-    const filePath = `providers/${Date.now()}-${imageFile.name.replace(/\\s+/g, '-')}`;
-    const uploaded = await uploadBytes(storageRef(storage, filePath), imageFile);
-    image = await getDownloadURL(uploaded.ref);
+    $('providerUploadSpinner').classList.remove('hidden');
+    $('saveProvider').disabled = true;
+    try {
+      const filePath = `providers/${Date.now()}-${imageFile.name.replace(/\\s+/g, '-')}`;
+      const uploaded = await uploadBytes(storageRef(storage, filePath), imageFile);
+      image = await getDownloadURL(uploaded.ref);
+    } finally {
+      $('providerUploadSpinner').classList.add('hidden');
+      $('saveProvider').disabled = false;
+    }
   }
 
   if (!image) {
@@ -767,6 +790,13 @@ function bindEvents() {
   $('participantsForm').addEventListener('submit', onSaveParticipant);
   $('saveMeeting').addEventListener('click', onSaveMeeting);
   $('cancelEdit').addEventListener('click', () => resetMeetingForm());
+  $('cancelCreateMeeting').addEventListener('click', async () => {
+    if (hasMeetingDraft()) {
+      const shouldDiscard = await confirmDiscardDraft();
+      if (!shouldDiscard) return;
+    }
+    resetMeetingForm();
+  });
 
   bindPickerEvents('provider');
   bindPickerEvents('participant');

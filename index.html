@@ -30,9 +30,9 @@
       </div>
 
       <div class="menu-actions">
-        <button id="openMeetingForm" class="btn btn-pill btn-primary"><i class="bi bi-plus-circle"></i> Nuevo evento</button>
-        <button id="openProvidersModal" class="btn btn-pill btn-soft"><i class="bi bi-building-add"></i> Proveedor</button>
-        <button id="openParticipantsModal" class="btn btn-pill btn-soft"><i class="bi bi-person-plus"></i> Participante</button>
+        <button id="openMeetingForm" class="btn btn-pill btn-primary"><i class="bi bi-plus-circle"></i> <span class="btn-label">Nuevo evento</span></button>
+        <button id="openProvidersModal" class="btn btn-pill btn-soft"><i class="bi bi-building-add"></i> <span class="btn-label">Proveedor</span></button>
+        <button id="openParticipantsModal" class="btn btn-pill btn-soft"><i class="bi bi-person-plus"></i> <span class="btn-label">Participante</span></button>
       </div>
     </header>
 
@@ -77,12 +77,13 @@
 
         <div class="quick-filters-wrap">
           <div class="quick-filters" id="quickFilters">
-            <button class="quick-filter active" data-filter="all"><i class="bi bi-grid"></i> Todas</button>
-            <button class="quick-filter" data-filter="in_progress"><i class="bi bi-play-circle"></i> En curso <span id="inProgressBadge" class="in-progress-badge hidden"></span></button>
-            <button class="quick-filter" data-filter="today"><i class="bi bi-sun"></i> Hoy</button>
-            <button class="quick-filter" data-filter="week"><i class="bi bi-calendar-week"></i> Esta semana</button>
-            <button class="quick-filter" data-filter="next_week"><i class="bi bi-calendar2-week"></i> Próxima semana</button>
-            <button class="quick-filter" data-filter="finished"><i class="bi bi-check2-circle"></i> Finalizadas</button>
+            <button class="quick-filter active" data-filter="upcoming"><i class="bi bi-clock-history"></i> Próximas reuniones <span class="quick-count" data-count-filter="upcoming">0</span></button>
+            <button class="quick-filter" data-filter="all"><i class="bi bi-grid"></i> Todas <span class="quick-count" data-count-filter="all">0</span></button>
+            <button class="quick-filter" data-filter="in_progress"><i class="bi bi-play-circle"></i> En curso <span id="inProgressBadge" class="in-progress-live hidden"></span><span class="quick-count" data-count-filter="in_progress">0</span></button>
+            <button class="quick-filter" data-filter="today"><i class="bi bi-sun"></i> Hoy <span class="quick-count" data-count-filter="today">0</span></button>
+            <button class="quick-filter" data-filter="week"><i class="bi bi-calendar-week"></i> Esta semana <span class="quick-count" data-count-filter="week">0</span></button>
+            <button class="quick-filter" data-filter="next_week"><i class="bi bi-calendar2-week"></i> Próxima semana <span class="quick-count" data-count-filter="next_week">0</span></button>
+            <button class="quick-filter" data-filter="finished"><i class="bi bi-check2-circle"></i> Finalizadas <span class="quick-count" data-count-filter="finished">0</span></button>
           </div>
           <div class="quick-filters-fade"></div>
         </div>

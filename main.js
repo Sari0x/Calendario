@@ -45,12 +45,16 @@ let totalPages = 1;
 let activeFilterDate = null;
 let activeFilterProvider = '';
 let activeFilterParticipant = '';
-let activeQuickFilter = 'all';
+let activeQuickFilter = 'upcoming';
 let editingMeetingId = null;
 let editingProviderId = null;
 let editingParticipantId = null;
 let nearestMeetingId = null;
 let uiTickerInterval = null;
+const pendingFinishMeetingIds = new Set();
+const expandedPostMeetingIds = new Set();
+let baseMeetings = [];
+let dateMeetCounts = {};
 
 const pickerUiState = {
   provider: { query: '', open: false },
@@ -119,7 +123,7 @@ function meetingStatus(meeting) {
   const start = new Date(meeting.startAt);
   const end = new Date(start.getTime() + meeting.duration * 60000);
   const today = now.toDateString() === start.toDateString();
-  if (end < now) return 'finished';
+  if (end <= now) return 'finished';
   if (start <= now && now < end) return 'in_progress';
   if (today) return 'today';
   return 'upcoming';
@@ -155,6 +159,22 @@ function countdownLabel(startAt) {
   return `Faltan ${minutes}m`;
 }
 
+function countdownCompactLabel(startAt) {
+  const now = new Date();
+  const start = new Date(startAt);
+  const diffMs = start - now;
+  if (diffMs <= 0) return 'inicia pronto';
+
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 function elapsedLabel(startAt) {
   const now = Date.now();
   const start = new Date(startAt).getTime();
@@ -162,6 +182,13 @@ function elapsedLabel(startAt) {
   const hours = Math.floor(diffMin / 60);
   const minutes = diffMin % 60;
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function toDateKeyLocal(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function normalizeSnapshot(snapshotVal) {
@@ -333,7 +360,7 @@ function openParticipantModal(editId = null) {
 
 function statusMeta(status) {
   if (status === 'finished') return { text: 'Finalizada', cls: 'finished', icon: 'bi-check2-circle' };
-  if (status === 'in_progress') return { text: 'En curso', cls: 'in-progress', icon: 'bi-play-fill' };
+  if (status === 'in_progress') return { text: '', cls: 'in-progress', icon: 'bi-play-fill' };
   if (status === 'today') return { text: 'Hoy', cls: 'today', icon: 'bi-sun-fill' };
   return { text: 'Próxima', cls: 'upcoming', icon: 'bi-calendar2-event' };
 }
@@ -361,16 +388,18 @@ function meetingCard(meeting) {
     if (status === 'in_progress') {
       countdown = '<span class="countdown in-progress"><i class="bi bi-broadcast-pin"></i> En curso ahora</span>';
     } else {
-      countdown = `<span class="countdown alert-upcoming" data-countdown="${meeting.startAt}"><i class="bi bi-alarm"></i> ${countdownLabel(meeting.startAt)}</span>`;
+      countdown = `<span class="countdown alert-upcoming ${isNearest ? 'nearest-countdown' : ''}" data-countdown="${meeting.startAt}"><i class="bi bi-alarm"></i> ${countdownLabel(meeting.startAt)}</span>`;
     }
   }
+  const isPostExpanded = expandedPostMeetingIds.has(meeting.id);
+  const isFinishing = pendingFinishMeetingIds.has(meeting.id);
 
   return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''} ${isNearest ? 'is-nearest' : ''}">
     <div class="meeting-top">
       <strong><i class="bi bi-clock-history"></i> ${esFmt.format(new Date(meeting.startAt))}</strong>
       <div class="top-badges">
         ${isNearest ? '<span class="badge nearest"><i class="bi bi-stars"></i> Próximo meet</span>' : ''}
-        <span class="badge ${meta.cls}"><i class="bi ${meta.icon}"></i> ${meta.text}</span>
+        <span class="badge ${meta.cls}"><i class="bi ${meta.icon}"></i>${meta.text ? ` ${meta.text}` : ''}</span>
       </div>
     </div>
 
@@ -390,14 +419,23 @@ function meetingCard(meeting) {
     </div>
 
     <div class="meeting-actions">
-      ${isFinished ? `<button class="btn btn-pill btn-soft" data-reschedule="${meeting.id}"><i class="bi bi-arrow-repeat"></i> Reprogramar</button>` : ''}
-      ${status === 'in_progress' ? `<button class="btn btn-pill btn-soft" data-finish-now="${meeting.id}"><i class="bi bi-stop-circle"></i> Finalizar ahora</button>` : ''}
-      <button class="btn btn-pill btn-ghost" data-edit="${meeting.id}"><i class="bi bi-pencil-square"></i></button>
-      ${!isFinished ? `<button class="btn btn-pill btn-ghost" data-delete="${meeting.id}"><i class="bi bi-trash3"></i></button>` : ''}
+      ${isFinished ? `<button class="btn btn-soft btn-soft-radius" data-reschedule="${meeting.id}"><i class="bi bi-arrow-repeat"></i> Reprogramar</button>` : ''}
+      ${
+        status === 'in_progress'
+          ? `<button class="btn btn-soft btn-soft-radius" data-finish-now="${meeting.id}" ${isFinishing ? 'disabled' : ''}>${
+              isFinishing ? '<span class="spinner mini"></span> Finalizando...' : '<i class="bi bi-stop-circle"></i> Finalizar ahora'
+            }</button>`
+          : ''
+      }
+      ${!isFinished ? `<button class="btn btn-ghost btn-action" data-edit="${meeting.id}"><i class="bi bi-pencil-square"></i></button>` : ''}
+      ${!isFinished ? `<button class="btn btn-ghost btn-action" data-delete="${meeting.id}"><i class="bi bi-trash3"></i></button>` : ''}
     </div>
     ${
       isFinished
-        ? `<div class="post-meeting-box">
+        ? `<button class="btn btn-ghost btn-soft-radius" data-toggle-post="${meeting.id}">
+            <i class="bi ${isPostExpanded ? 'bi-chevron-up' : 'bi-chevron-down'}"></i> ${isPostExpanded ? 'Ocultar post reunión' : 'Cargar post reunión'}
+          </button>
+          <div class="post-meeting-box ${isPostExpanded ? '' : 'hidden'}" data-post-box="${meeting.id}">
             <label>Link de grabación
               <input type="url" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
             </label>
@@ -430,12 +468,47 @@ function applyQuickFilter(rows) {
     const start = new Date(m.startAt);
     const status = meetingStatus(m);
 
+    if (activeQuickFilter === 'upcoming') return status === 'upcoming' || status === 'in_progress';
     if (activeQuickFilter === 'in_progress') return status === 'in_progress';
     if (activeQuickFilter === 'today') return start.toDateString() === now.toDateString();
     if (activeQuickFilter === 'week') return start >= thisWeek.start && start <= thisWeek.end;
     if (activeQuickFilter === 'next_week') return start >= nextWeek.start && start <= nextWeek.end;
     if (activeQuickFilter === 'finished') return status === 'finished';
     return true;
+  });
+}
+
+function updateQuickFilterCounts(rows) {
+  const now = new Date();
+  const thisWeek = getWeekRange(now);
+  const nextWeekStart = new Date(thisWeek.end);
+  nextWeekStart.setDate(thisWeek.end.getDate() + 1);
+  nextWeekStart.setHours(0, 0, 0, 0);
+  const nextWeek = getWeekRange(nextWeekStart);
+  const counts = {
+    all: rows.length,
+    upcoming: 0,
+    in_progress: 0,
+    today: 0,
+    week: 0,
+    next_week: 0,
+    finished: 0,
+  };
+
+  rows.forEach((meeting) => {
+    const start = new Date(meeting.startAt);
+    const status = meetingStatus(meeting);
+    if (status === 'upcoming' || status === 'in_progress') counts.upcoming += 1;
+    if (status === 'in_progress') counts.in_progress += 1;
+    if (start.toDateString() === now.toDateString()) counts.today += 1;
+    if (start >= thisWeek.start && start <= thisWeek.end) counts.week += 1;
+    if (start >= nextWeek.start && start <= nextWeek.end) counts.next_week += 1;
+    if (status === 'finished') counts.finished += 1;
+  });
+
+  document.querySelectorAll('[data-count-filter]').forEach((el) => {
+    const filter = el.dataset.countFilter;
+    el.textContent = String(counts[filter] ?? 0);
   });
 }
 
@@ -495,20 +568,21 @@ function renderFilterOptions() {
 
 function updateTopIndicators() {
   const now = Date.now();
-  const activeInProgress = filteredMeetings.filter((m) => meetingStatus(m) === 'in_progress');
+  const activeInProgress = baseMeetings.filter((m) => meetingStatus(m) === 'in_progress');
   const inProgressBadge = $('inProgressBadge');
   if (activeInProgress.length === 1) {
     inProgressBadge.textContent = elapsedLabel(activeInProgress[0].startAt);
     inProgressBadge.classList.remove('hidden');
   } else if (activeInProgress.length > 1) {
-    inProgressBadge.textContent = `${activeInProgress.length} en curso`;
+    inProgressBadge.textContent = `${activeInProgress.length} reuniones en curso`;
     inProgressBadge.classList.remove('hidden');
   } else {
     inProgressBadge.classList.add('hidden');
+    inProgressBadge.textContent = '';
   }
 
-  const nextMeeting = filteredMeetings
-    .filter((m) => new Date(m.startAt).getTime() > now)
+  const nextMeeting = baseMeetings
+    .filter((m) => meetingStatus(m) !== 'finished' && new Date(m.startAt).getTime() > now)
     .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
   const counter = $('nextMeetingCounter');
   if (!nextMeeting) {
@@ -517,7 +591,22 @@ function updateTopIndicators() {
     return;
   }
   counter.classList.remove('hidden');
-  counter.innerHTML = `<i class="bi bi-alarm"></i> Próxima reunión en ${countdownLabel(nextMeeting.startAt)}`;
+  counter.innerHTML = `<i class="bi bi-alarm"></i> Próxima reunión en ${countdownCompactLabel(nextMeeting.startAt)}`;
+}
+
+function setNextMeetingCounterLoading(show) {
+  const counter = $('nextMeetingCounter');
+  if (show) {
+    counter.classList.remove('hidden');
+    counter.innerHTML = '<span class="spinner mini"></span> Cargando próxima reunión...';
+    return;
+  }
+  if (counter.textContent.includes('Cargando próxima reunión')) {
+    counter.textContent = '';
+    counter.classList.add('hidden');
+  } else if (!counter.textContent.trim()) {
+    counter.classList.add('hidden');
+  }
 }
 
 function startUiTicker() {
@@ -536,6 +625,7 @@ async function loadReferences() {
 
 async function fetchMeetings() {
   showSpinner(true);
+  setNextMeetingCounterLoading(true);
   meetingsList.innerHTML = '';
   try {
     let rows = [];
@@ -553,6 +643,9 @@ async function fetchMeetings() {
       rows = rows.filter((row) => (row.participants || []).some((p) => p.id === activeFilterParticipant));
     }
 
+    await refreshDateMeetCounts();
+    baseMeetings = [...rows];
+    updateQuickFilterCounts(rows);
     filteredMeetings = sortMeetings(applyQuickFilter(rows));
     renderCurrentPage();
   } catch (error) {
@@ -561,7 +654,18 @@ async function fetchMeetings() {
     console.error(error);
   } finally {
     showSpinner(false);
+    setNextMeetingCounterLoading(false);
   }
+}
+
+async function refreshDateMeetCounts() {
+  const rows = await loadCollection('meetings');
+  dateMeetCounts = rows.reduce((acc, row) => {
+    const key = row.dateKey || toDateKeyLocal(new Date(row.startAt));
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  $('filterDate')._flatpickr?.redraw();
 }
 
 async function onSaveProvider(e) {
@@ -769,6 +873,7 @@ function loadMeetingToForm(id) {
   $('cancelEdit').classList.remove('hidden');
   $('saveMeeting').innerHTML = '<i class="bi bi-floppy"></i> Guardar cambios';
   $('meetingFormSection').classList.remove('collapsed');
+  expandedPostMeetingIds.add(id);
   renderPickers();
 }
 
@@ -790,21 +895,12 @@ async function deleteMeeting(id) {
 }
 
 async function rescheduleMeeting(id) {
-  const row = filteredMeetings.find((m) => m.id === id);
-  if (!row) return;
-  const next = new Date(row.startAt);
-  next.setDate(next.getDate() + 1);
-
-  await update(ref(rtdb, `meetings/${id}`), {
-    startAt: next.toISOString(),
-    dateKey: next.toISOString().slice(0, 10),
-    updatedAt: new Date().toISOString(),
-  });
-
-  await fetchMeetings();
+  loadMeetingToForm(id);
+  scrollToMeetingForm();
 }
 
 async function finishMeetingNow(id) {
+  if (pendingFinishMeetingIds.has(id)) return;
   const row = filteredMeetings.find((m) => m.id === id);
   if (!row) return;
   const now = new Date();
@@ -819,8 +915,14 @@ async function finishMeetingNow(id) {
     cancelButtonText: 'Cancelar',
   });
   if (!result.isConfirmed) return;
-  await update(ref(rtdb, `meetings/${id}`), { duration: elapsedMin, updatedAt: new Date().toISOString() });
-  await fetchMeetings();
+  pendingFinishMeetingIds.add(id);
+  renderCurrentPage();
+  try {
+    await update(ref(rtdb, `meetings/${id}`), { duration: elapsedMin, updatedAt: new Date().toISOString() });
+    await fetchMeetings();
+  } finally {
+    pendingFinishMeetingIds.delete(id);
+  }
 }
 
 async function savePostMeeting(id) {
@@ -1045,6 +1147,13 @@ function bindEvents() {
     const idCopyLink = e.target.closest('[data-copy-link]')?.dataset?.copyLink;
     const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     const idSavePost = e.target.closest('[data-save-post]')?.dataset?.savePost;
+    const idTogglePost = e.target.closest('[data-toggle-post]')?.dataset?.togglePost;
+    if (idTogglePost) {
+      if (expandedPostMeetingIds.has(idTogglePost)) expandedPostMeetingIds.delete(idTogglePost);
+      else expandedPostMeetingIds.add(idTogglePost);
+      renderCurrentPage();
+      return;
+    }
     if (idRes) await rescheduleMeeting(idRes);
     if (idFinish) await finishMeetingNow(idFinish);
     if (idEdit) {
@@ -1082,13 +1191,25 @@ function setupFlatpickr() {
       currentPage = 1;
       await fetchMeetings();
     },
+    onDayCreate: (_, __, ___, dayElem) => {
+      const dateKey = toDateKeyLocal(dayElem.dateObj);
+      const count = dateMeetCounts[dateKey] || 0;
+      if (!count) return;
+      const badge = document.createElement('span');
+      badge.className = 'day-meet-count';
+      badge.textContent = String(count);
+      dayElem.appendChild(badge);
+    },
   });
 }
 
 (async function init() {
+  showSpinner(true);
+  setNextMeetingCounterLoading(true);
   setupFlatpickr();
   bindEvents();
   await verifyRTDBAccess();
   await loadReferences();
+  await refreshDateMeetCounts();
   await fetchMeetings();
 })();

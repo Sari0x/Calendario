@@ -10,6 +10,7 @@ import {
   ref,
   set,
   update,
+  remove,
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const firebaseConfig = {
@@ -129,6 +130,25 @@ function renderPickers() {
   const selectedParticipants = new Set(($('participantsPicker').dataset.selected || '').split(',').filter(Boolean));
   $('providersPicker').innerHTML = buildMultiPicker(providers, selectedProviders, 'provider');
   $('participantsPicker').innerHTML = buildMultiPicker(participants, selectedParticipants, 'participant');
+  renderCreatedLists();
+}
+
+function renderCreatedLists() {
+  $('providersCreatedList').innerHTML = providers.length
+    ? providers
+        .map(
+          (p) => `<div class="created-item"><img src="${p.image}" class="provider-img" alt="${p.name}"/><span class="name">${p.name}</span><button class="btn btn-ghost btn-xs" data-delete-provider="${p.id}">Eliminar</button></div>`,
+        )
+        .join('')
+    : '<small>Sin proveedores creados.</small>';
+
+  $('participantsCreatedList').innerHTML = participants.length
+    ? participants
+        .map(
+          (p) => `<div class="created-item"><span class="avatar" style="background:${p.color}">${p.initials}</span><span class="name">${p.name} ${p.lastName}</span><button class="btn btn-ghost btn-xs" data-delete-participant="${p.id}">Eliminar</button></div>`,
+        )
+        .join('')
+    : '<small>Sin participantes creados.</small>';
 }
 
 function badge(label, cls) {
@@ -330,9 +350,38 @@ async function rescheduleMeeting(id) {
   await fetchMeetings();
 }
 
+
+async function deleteProvider(id) {
+  const result = await Swal.fire({
+    title: '¿Estas seguro?',
+    text: 'Se eliminará el proveedor.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+  });
+  if (!result.isConfirmed) return;
+  await remove(ref(rtdb, `providers/${id}`));
+  await loadReferences();
+}
+
+async function deleteParticipant(id) {
+  const result = await Swal.fire({
+    title: '¿Estas seguro?',
+    text: 'Se eliminará el participante.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+  });
+  if (!result.isConfirmed) return;
+  await remove(ref(rtdb, `participants/${id}`));
+  await loadReferences();
+}
+
 function bindEvents() {
-  $('openProvidersModal').addEventListener('click', () => $('providersModal').showModal());
-  $('openParticipantsModal').addEventListener('click', () => $('participantsModal').showModal());
+  $('openProvidersModal').addEventListener('click', () => { renderCreatedLists(); $('providersModal').showModal(); });
+  $('openParticipantsModal').addEventListener('click', () => { renderCreatedLists(); $('participantsModal').showModal(); });
   $('cancelProvider').addEventListener('click', () => $('providersModal').close());
   $('cancelParticipant').addEventListener('click', () => $('participantsModal').close());
 
@@ -350,6 +399,17 @@ function bindEvents() {
   });
   $('participantsPicker').addEventListener('change', () => {
     $('participantsPicker').dataset.selected = [...document.querySelectorAll('[data-participant]:checked')].map((e) => e.dataset.participant).join(',');
+  });
+
+
+  $('providersCreatedList').addEventListener('click', async (e) => {
+    const id = e.target?.dataset?.deleteProvider;
+    if (id) await deleteProvider(id);
+  });
+
+  $('participantsCreatedList').addEventListener('click', async (e) => {
+    const id = e.target?.dataset?.deleteParticipant;
+    if (id) await deleteParticipant(id);
   });
 
   $('clearFilter').addEventListener('click', async () => {

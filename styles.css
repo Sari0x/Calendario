@@ -173,8 +173,10 @@ textarea {
   gap: 8px;
   font-size: 13px;
   background: #f8f8fb;
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
+  align-self: flex-start;
 }
 
 .option-chip input {
@@ -190,8 +192,8 @@ textarea {
 
 .avatar,
 .provider-img {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   object-fit: cover;
 }
@@ -326,4 +328,34 @@ textarea {
 .meeting-actions {
   display:flex;
   gap:8px;
+}
+
+
+.created-list {
+  margin-top: 8px;
+  max-height: 150px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.created-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.created-item .name {
+  flex: 1;
+  font-size: 13px;
+}
+
+.btn-xs {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
 }

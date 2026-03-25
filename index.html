@@ -71,6 +71,10 @@
         <h3>Nuevo proveedor</h3>
         <label>Nombre <input id="providerName" type="text" required /></label>
         <label>Imagen (URL) <input id="providerImage" type="url" required /></label>
+        <div class="modal-list-wrap">
+          <strong>Proveedores creados</strong>
+          <div id="providersCreatedList" class="created-list"></div>
+        </div>
         <div class="modal-actions">
           <button type="button" id="cancelProvider" class="btn btn-pill btn-ghost">Cancelar</button>
           <button type="submit" id="saveProvider" class="btn btn-pill btn-primary">Guardar</button>
@@ -84,6 +88,10 @@
         <label>Nombre <input id="participantName" type="text" required /></label>
         <label>Apellido <input id="participantLastName" type="text" required /></label>
         <label>Email <input id="participantEmail" type="email" required /></label>
+        <div class="modal-list-wrap">
+          <strong>Participantes creados</strong>
+          <div id="participantsCreatedList" class="created-list"></div>
+        </div>
         <div class="modal-actions">
           <button type="button" id="cancelParticipant" class="btn btn-pill btn-ghost">Cancelar</button>
           <button type="submit" id="saveParticipant" class="btn btn-pill btn-primary">Guardar</button>
@@ -93,6 +101,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script type="module" src="./main.js"></script>
   </body>
 </html>

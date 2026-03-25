@@ -3,7 +3,6 @@ import {
   addDoc,
   collection,
   doc,
-  getCountFromServer,
   getDocs,
   getFirestore,
   limit,
@@ -31,12 +30,15 @@ const $ = (id) => document.getElementById(id);
 const spinner = $('spinner');
 const meetingsList = $('meetingsList');
 const pageInfo = $('pageInfo');
+const appNotice = $('appNotice');
+
 let providers = [];
 let participants = [];
 let meetings = [];
 let currentPage = 1;
 let totalPages = 1;
 let activeFilterDate = null;
+let storageMode = 'firestore';
 
 const providerIcons = {
   meet: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/Google_Meet_icon_%282020%29.svg/960px-Google_Meet_icon_%282020%29.svg.png',
@@ -46,6 +48,19 @@ const providerIcons = {
 };
 
 const esFmt = new Intl.DateTimeFormat('es-ES', { dateStyle: 'full', timeStyle: 'short' });
+
+const localKeys = {
+  providers: 'calendario.providers.v1',
+  participants: 'calendario.participants.v1',
+  meetings: 'calendario.meetings.v1',
+};
+
+const uid = () => (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+function showNotice(message) {
+  appNotice.textContent = message;
+  appNotice.classList.remove('hidden');
+}
 
 function showSpinner(show) {
   spinner.classList.toggle('hidden', !show);
@@ -82,6 +97,14 @@ function meetingStatus(meeting) {
   return 'proxima';
 }
 
+function readLocal(name) {
+  return JSON.parse(localStorage.getItem(localKeys[name]) || '[]');
+}
+
+function writeLocal(name, data) {
+  localStorage.setItem(localKeys[name], JSON.stringify(data));
+}
+
 function buildMultiPicker(items, selectedIds, type) {
   return items
     .map((item) => {
@@ -114,14 +137,43 @@ function syncPickerSelection() {
   });
 }
 
+async function verifyFirestoreAccess() {
+  try {
+    await getDocs(query(collection(db, 'meetings'), limit(1)));
+    storageMode = 'firestore';
+  } catch (error) {
+    storageMode = 'local';
+    showNotice(
+      'No se pudo usar Firestore (API deshabilitada o reglas insuficientes). Se activó modo local (localStorage) para que la app funcione igual.',
+    );
+    console.error('Firestore no disponible, usando localStorage:', error);
+  }
+}
+
 async function loadReferences() {
-  const [providersSnap, participantsSnap] = await Promise.all([
-    getDocs(query(collection(db, 'providers'), orderBy('name'))),
-    getDocs(query(collection(db, 'participants'), orderBy('name'))),
-  ]);
-  providers = providersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  participants = participantsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  renderPickers();
+  if (storageMode === 'local') {
+    providers = readLocal('providers');
+    participants = readLocal('participants');
+    renderPickers();
+    return;
+  }
+
+  try {
+    const [providersSnap, participantsSnap] = await Promise.all([
+      getDocs(query(collection(db, 'providers'), orderBy('name'))),
+      getDocs(query(collection(db, 'participants'), orderBy('name'))),
+    ]);
+    providers = providersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    participants = participantsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderPickers();
+  } catch (error) {
+    storageMode = 'local';
+    showNotice('Error leyendo Firestore. Continuamos con almacenamiento local para evitar bloqueos.');
+    providers = readLocal('providers');
+    participants = readLocal('participants');
+    renderPickers();
+    console.error(error);
+  }
 }
 
 function badge(label, cls) {
@@ -158,39 +210,48 @@ function meetingCard(meeting) {
     <div>${meeting.note || 'Sin nota'}</div>
     <div class="providers">${providersHtml || '<em>Sin proveedores</em>'}</div>
     <div class="participants">${participantsHtml || '<em>Sin participantes</em>'}</div>
-    ${
-      meeting.link
-        ? `<a href="${meeting.link}" target="_blank" rel="noreferrer">${linkIcon} Abrir reunión</a>`
-        : '<span>Sin link</span>'
-    }
-    ${disabled ? `<button class="btn btn-secondary" data-reschedule="${meeting.id}">Reprogramar</button>` : ''}
+    ${meeting.link ? `<a href="${meeting.link}" target="_blank" rel="noreferrer">${linkIcon} Abrir reunión</a>` : '<span>Sin link</span>'}
+    ${disabled ? `<button class="btn btn-pill btn-soft" data-reschedule="${meeting.id}">Reprogramar</button>` : ''}
   </article>`;
+}
+
+function paginateRows(rows) {
+  totalPages = Math.max(Math.ceil(rows.length / pageSize), 1);
+  currentPage = Math.min(currentPage, totalPages);
+  const offset = (currentPage - 1) * pageSize;
+  return rows.slice(offset, offset + pageSize);
 }
 
 async function fetchMeetings() {
   showSpinner(true);
-  let countQuery = collection(db, 'meetings');
-  let baseQuery = query(collection(db, 'meetings'), orderBy('startAt', 'desc'));
+  try {
+    let rows = [];
 
-  if (activeFilterDate) {
-    countQuery = query(collection(db, 'meetings'), where('dateKey', '==', activeFilterDate));
-    baseQuery = query(baseQuery, where('dateKey', '==', activeFilterDate));
+    if (storageMode === 'local') {
+      rows = readLocal('meetings');
+      rows.sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
+    } else {
+      const base = activeFilterDate
+        ? query(collection(db, 'meetings'), where('dateKey', '==', activeFilterDate), orderBy('startAt', 'desc'))
+        : query(collection(db, 'meetings'), orderBy('startAt', 'desc'));
+      const snap = await getDocs(base);
+      rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    }
+
+    if (activeFilterDate) rows = rows.filter((m) => m.dateKey === activeFilterDate);
+    meetings = paginateRows(rows);
+
+    meetingsList.innerHTML = meetings.length ? meetings.map(meetingCard).join('') : '<p>No hay reuniones.</p>';
+    pageInfo.textContent = `Página ${currentPage} de ${totalPages}`;
+    $('prevPage').disabled = currentPage === 1;
+    $('nextPage').disabled = currentPage >= totalPages;
+  } catch (error) {
+    meetingsList.innerHTML = '<p>No se pudieron cargar reuniones.</p>';
+    showNotice('Error al cargar reuniones. Revisá la consola para detalles.');
+    console.error(error);
+  } finally {
+    showSpinner(false);
   }
-
-  const countSnap = await getCountFromServer(countQuery);
-  const total = countSnap.data().count;
-  totalPages = Math.max(Math.ceil(total / pageSize), 1);
-  currentPage = Math.min(currentPage, totalPages);
-
-  const docs = await getDocs(query(baseQuery, limit(pageSize * currentPage)));
-  const sliced = docs.docs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  meetings = sliced.map((d) => ({ id: d.id, ...d.data() }));
-
-  meetingsList.innerHTML = meetings.length ? meetings.map(meetingCard).join('') : '<p>No hay reuniones.</p>';
-  pageInfo.textContent = `Página ${currentPage} de ${totalPages}`;
-  $('prevPage').disabled = currentPage === 1;
-  $('nextPage').disabled = currentPage >= totalPages;
-  showSpinner(false);
 }
 
 async function saveProvider(e) {
@@ -198,7 +259,15 @@ async function saveProvider(e) {
   const name = $('providerName').value.trim();
   const image = $('providerImage').value.trim();
   if (!name || !image) return;
-  await addDoc(collection(db, 'providers'), { name, image, createdAt: serverTimestamp() });
+
+  if (storageMode === 'local') {
+    const current = readLocal('providers');
+    current.push({ id: uid(), name, image, createdAt: new Date().toISOString() });
+    writeLocal('providers', current);
+  } else {
+    await addDoc(collection(db, 'providers'), { name, image, createdAt: serverTimestamp() });
+  }
+
   $('providerName').value = '';
   $('providerImage').value = '';
   $('providersModal').close();
@@ -211,16 +280,25 @@ async function saveParticipant(e) {
   const lastName = $('participantLastName').value.trim();
   const email = $('participantEmail').value.trim();
   if (!name || !lastName || !email) return;
+
   const inits = initials(name, lastName);
   const color = randomColor(`${name}${lastName}${email}`);
-  await addDoc(collection(db, 'participants'), {
-    name,
-    lastName,
-    email,
-    initials: inits,
-    color,
-    createdAt: serverTimestamp(),
-  });
+
+  if (storageMode === 'local') {
+    const current = readLocal('participants');
+    current.push({ id: uid(), name, lastName, email, initials: inits, color, createdAt: new Date().toISOString() });
+    writeLocal('participants', current);
+  } else {
+    await addDoc(collection(db, 'participants'), {
+      name,
+      lastName,
+      email,
+      initials: inits,
+      color,
+      createdAt: serverTimestamp(),
+    });
+  }
+
   $('participantName').value = '';
   $('participantLastName').value = '';
   $('participantEmail').value = '';
@@ -232,40 +310,35 @@ async function saveMeeting() {
   const day = $('meetingDate').value;
   const time = $('meetingTime').value;
   const duration = Number($('meetingDuration').value || 60);
-  if (!day || !time) {
-    alert('Seleccioná fecha y hora');
-    return;
-  }
+  if (!day || !time) return alert('Seleccioná fecha y hora');
 
   const startAt = new Date(`${day}T${time}`);
-  if (Number.isNaN(startAt.getTime())) {
-    alert('Fecha/hora inválida');
-    return;
-  }
+  if (Number.isNaN(startAt.getTime())) return alert('Fecha/hora inválida');
 
   const selectedProviderIds = ($('providersPicker').dataset.selected || '').split(',').filter(Boolean);
   const selectedParticipantIds = ($('participantsPicker').dataset.selected || '').split(',').filter(Boolean);
 
-  const selectedProviders = providers.filter((p) => selectedProviderIds.includes(p.id));
-  const selectedParticipants = participants.filter((p) => selectedParticipantIds.includes(p.id));
-
-  await addDoc(collection(db, 'meetings'), {
+  const payload = {
     startAt: startAt.toISOString(),
     duration,
     dateKey: startAt.toISOString().slice(0, 10),
     note: $('meetingNote').value.trim(),
     link: $('meetingLink').value.trim(),
-    providers: selectedProviders.map(({ id, name, image }) => ({ id, name, image })),
-    participants: selectedParticipants.map(({ id, name, lastName, email, initials: ini, color }) => ({
-      id,
-      name,
-      lastName,
-      email,
-      initials: ini,
-      color,
-    })),
-    createdAt: serverTimestamp(),
-  });
+    providers: providers
+      .filter((p) => selectedProviderIds.includes(p.id))
+      .map(({ id, name, image }) => ({ id, name, image })),
+    participants: participants
+      .filter((p) => selectedParticipantIds.includes(p.id))
+      .map(({ id, name, lastName, email, initials: ini, color }) => ({ id, name, lastName, email, initials: ini, color })),
+  };
+
+  if (storageMode === 'local') {
+    const current = readLocal('meetings');
+    current.push({ id: uid(), ...payload, createdAt: new Date().toISOString() });
+    writeLocal('meetings', current);
+  } else {
+    await addDoc(collection(db, 'meetings'), { ...payload, createdAt: serverTimestamp() });
+  }
 
   $('meetingDate').value = '';
   $('meetingTime').value = '';
@@ -281,13 +354,21 @@ async function saveMeeting() {
 async function rescheduleMeeting(id) {
   const current = meetings.find((m) => m.id === id);
   if (!current) return;
-  const oldDate = new Date(current.startAt);
-  oldDate.setDate(oldDate.getDate() + 1);
-  await updateDoc(doc(db, 'meetings', id), {
-    startAt: oldDate.toISOString(),
-    dateKey: oldDate.toISOString().slice(0, 10),
-    updatedAt: serverTimestamp(),
-  });
+  const next = new Date(current.startAt);
+  next.setDate(next.getDate() + 1);
+
+  if (storageMode === 'local') {
+    const rows = readLocal('meetings').map((m) =>
+      m.id === id ? { ...m, startAt: next.toISOString(), dateKey: next.toISOString().slice(0, 10) } : m,
+    );
+    writeLocal('meetings', rows);
+  } else {
+    await updateDoc(doc(db, 'meetings', id), {
+      startAt: next.toISOString(),
+      dateKey: next.toISOString().slice(0, 10),
+      updatedAt: serverTimestamp(),
+    });
+  }
   await fetchMeetings();
 }
 
@@ -305,7 +386,7 @@ function setupFlatpickr() {
     altInput: true,
     altFormat: 'l, j \\d\\e F \\d\\e Y',
     dateFormat: 'Y-m-d',
-    onChange: async (dates, dateStr) => {
+    onChange: async (_, dateStr) => {
       activeFilterDate = dateStr || null;
       currentPage = 1;
       await fetchMeetings();
@@ -348,6 +429,7 @@ function bindEvents() {
 (async function init() {
   setupFlatpickr();
   bindEvents();
+  await verifyFirestoreAccess();
   await loadReferences();
   await fetchMeetings();
 })();

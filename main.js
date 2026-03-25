@@ -185,6 +185,14 @@ function buildPicker(type) {
   `;
 }
 
+function syncPickerDropdownVisibility(type) {
+  const { containerId } = getPickerMeta(type);
+  const container = $(containerId);
+  const suggestions = container.querySelector(`[data-picker-suggestions="${type}"]`);
+  if (!suggestions) return;
+  suggestions.classList.toggle('hidden', !pickerUiState[type].open);
+}
+
 function renderPickers() {
   buildPicker('provider');
   buildPicker('participant');
@@ -546,15 +554,7 @@ function bindPickerEvents(type) {
   container.addEventListener('focusin', (e) => {
     if (!e.target.matches(`[data-picker-input="${type}"]`)) return;
     pickerUiState[type].open = true;
-    renderPickers();
-  });
-
-  container.addEventListener('focusout', () => {
-    setTimeout(() => {
-      if (container.contains(document.activeElement)) return;
-      pickerUiState[type].open = false;
-      renderPickers();
-    }, 120);
+    syncPickerDropdownVisibility(type);
   });
 }
 
@@ -581,6 +581,15 @@ function bindEvents() {
 
   bindPickerEvents('provider');
   bindPickerEvents('participant');
+
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-picker-shell]')) return;
+    const wasProviderOpen = pickerUiState.provider.open;
+    const wasParticipantOpen = pickerUiState.participant.open;
+    pickerUiState.provider.open = false;
+    pickerUiState.participant.open = false;
+    if (wasProviderOpen || wasParticipantOpen) renderPickers();
+  });
 
   $('providersCreatedList').addEventListener('click', async (e) => {
     const idDelete = e.target?.dataset?.deleteProvider;

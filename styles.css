@@ -187,6 +187,12 @@ textarea {
   background: #fff;
   display: flex;
   flex-direction: column;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  box-shadow: 0 10px 28px #00000014;
 }
 
 .picker-suggestion {

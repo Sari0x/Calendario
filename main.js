@@ -86,7 +86,8 @@ function meetingStatus(meeting) {
   return 'proxima';
 }
 
-function normalizeSnapshot(snapshotVal = {}) {
+function normalizeSnapshot(snapshotVal) {
+  if (!snapshotVal || typeof snapshotVal !== 'object') return [];
   return Object.entries(snapshotVal).map(([id, value]) => ({ id, ...value }));
 }
 

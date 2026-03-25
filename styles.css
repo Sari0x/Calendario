@@ -70,6 +70,12 @@ p {
   border: 1px solid #ffffff;
   border-radius: 22px;
   padding: 16px;
+  position: relative;
+  overflow: visible;
+}
+
+.container > .card:first-of-type {
+  z-index: 40;
 }
 
 .card-header {
@@ -157,6 +163,8 @@ textarea {
   padding: 8px;
   min-height: 52px;
   background: #fff;
+  position: relative;
+  z-index: 30;
 }
 
 .picker-shell {

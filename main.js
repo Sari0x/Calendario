@@ -581,8 +581,8 @@ function updateTopIndicators() {
     inProgressBadge.textContent = '';
   }
 
-  const nextMeeting = filteredMeetings
-    .filter((m) => new Date(m.startAt).getTime() > now)
+  const nextMeeting = baseMeetings
+    .filter((m) => meetingStatus(m) !== 'finished' && new Date(m.startAt).getTime() > now)
     .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
   const counter = $('nextMeetingCounter');
   if (!nextMeeting) {

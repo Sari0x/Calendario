@@ -309,10 +309,13 @@ textarea {
 
 .avatar,
 .provider-img {
-  width: 20px;
   height: 20px;
-  border-radius: 50%;
   object-fit: cover;
+}
+
+.provider-img {
+  width: auto;
+  border-radius: 0;
 }
 
 .provider-dot {

@@ -849,7 +849,7 @@ textarea {
 }
 
 .upload-spinner {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   gap: 8px;
@@ -857,6 +857,10 @@ textarea {
   font-size: 13px;
   width: 100%;
   text-align: center;
+}
+
+.upload-spinner:not(.hidden) {
+  display: flex;
 }
 
 .next-meeting-counter {

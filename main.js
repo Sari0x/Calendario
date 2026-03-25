@@ -38,6 +38,7 @@ let meetings = [];
 let currentPage = 1;
 let totalPages = 1;
 let activeFilterDate = null;
+let editingMeetingId = null;
 
 const providerIcons = {
   meet: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/Google_Meet_icon_%282020%29.svg/960px-Google_Meet_icon_%282020%29.svg.png',
@@ -118,7 +119,7 @@ function buildMultiPicker(items, selectedIds, type) {
           ? `<img src="${item.image}" class="provider-img" alt="${item.name}" />`
           : `<span class="avatar" style="background:${item.color}">${item.initials}</span>`;
       const label = type === 'provider' ? item.name : `${item.name} ${item.lastName}`;
-      return `<label class="option-chip">${visual}<input type="checkbox" data-${type}="${item.id}" ${checked}/> ${label}</label>`;
+      return `<label class="option-chip">${visual}<input type="checkbox" data-${type}="${item.id}" ${checked}/><span class="chip-text">${label}</span></label>`;
     })
     .join('');
 }
@@ -165,7 +166,11 @@ function meetingCard(meeting) {
     <div class="providers">${providersHtml || '<em>Sin proveedores</em>'}</div>
     <div class="participants">${participantsHtml || '<em>Sin participantes</em>'}</div>
     ${meeting.link ? `<a href="${meeting.link}" target="_blank" rel="noreferrer">${linkIcon} Abrir reunión</a>` : '<span>Sin link</span>'}
-    ${disabled ? `<button class="btn btn-pill btn-soft" data-reschedule="${meeting.id}">Reprogramar</button>` : ''}
+    <div class="meeting-actions">
+      ${disabled ? `<button class="btn btn-pill btn-soft" data-reschedule="${meeting.id}">Reprogramar</button>` : ''}
+      <button class="btn btn-pill btn-ghost" data-edit="${meeting.id}">Editar</button>
+      <button class="btn btn-pill btn-ghost" data-delete="${meeting.id}">Eliminar</button>
+    </div>
   </article>`;
 }
 
@@ -254,7 +259,7 @@ async function onSaveMeeting() {
   const selectedProviderIds = ($('providersPicker').dataset.selected || '').split(',').filter(Boolean);
   const selectedParticipantIds = ($('participantsPicker').dataset.selected || '').split(',').filter(Boolean);
 
-  await saveCollectionItem('meetings', {
+  const payload = {
     startAt: startAt.toISOString(),
     duration: Number($('meetingDuration').value || 60),
     dateKey: startAt.toISOString().slice(0, 10),
@@ -264,7 +269,13 @@ async function onSaveMeeting() {
     participants: participants
       .filter((p) => selectedParticipantIds.includes(p.id))
       .map(({ id, name, lastName, email, initials: ini, color }) => ({ id, name, lastName, email, initials: ini, color })),
-  });
+  };
+
+  if (editingMeetingId) {
+    await update(ref(rtdb, `meetings/${editingMeetingId}`), { ...payload, updatedAt: new Date().toISOString() });
+  } else {
+    await saveCollectionItem('meetings', payload);
+  }
 
   $('meetingDate').value = '';
   $('meetingTime').value = '';
@@ -273,7 +284,34 @@ async function onSaveMeeting() {
   $('meetingLink').value = '';
   $('providersPicker').dataset.selected = '';
   $('participantsPicker').dataset.selected = '';
+  editingMeetingId = null;
+  $('cancelEdit').classList.add('hidden');
+  $('saveMeeting').textContent = 'Cargar evento';
   renderPickers();
+  await fetchMeetings();
+}
+
+function loadMeetingToForm(id) {
+  const row = meetings.find((m) => m.id === id);
+  if (!row) return;
+  const dt = new Date(row.startAt);
+  $('meetingDate').value = row.dateKey;
+  $('meetingDate')._flatpickr?.setDate(row.dateKey, true, 'Y-m-d');
+  $('meetingTime').value = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+  $('meetingDuration').value = String(row.duration || 60);
+  $('meetingNote').value = row.note || '';
+  $('meetingLink').value = row.link || '';
+  $('providersPicker').dataset.selected = (row.providers || []).map((p) => p.id).join(',');
+  $('participantsPicker').dataset.selected = (row.participants || []).map((p) => p.id).join(',');
+  editingMeetingId = id;
+  $('cancelEdit').classList.remove('hidden');
+  $('saveMeeting').textContent = 'Guardar cambios';
+  renderPickers();
+}
+
+async function deleteMeeting(id) {
+  if (!confirm('¿Eliminar esta reunión?')) return;
+  await set(ref(rtdb, `meetings/${id}`), null);
   await fetchMeetings();
 }
 
@@ -301,6 +339,11 @@ function bindEvents() {
   $('providersForm').addEventListener('submit', onSaveProvider);
   $('participantsForm').addEventListener('submit', onSaveParticipant);
   $('saveMeeting').addEventListener('click', onSaveMeeting);
+  $('cancelEdit').addEventListener('click', () => {
+    editingMeetingId = null;
+    $('cancelEdit').classList.add('hidden');
+    $('saveMeeting').textContent = 'Cargar evento';
+  });
 
   $('providersPicker').addEventListener('change', () => {
     $('providersPicker').dataset.selected = [...document.querySelectorAll('[data-provider]:checked')].map((e) => e.dataset.provider).join(',');
@@ -326,8 +369,12 @@ function bindEvents() {
   });
 
   meetingsList.addEventListener('click', async (e) => {
-    const id = e.target?.dataset?.reschedule;
-    if (id) await rescheduleMeeting(id);
+    const idRes = e.target?.dataset?.reschedule;
+    const idEdit = e.target?.dataset?.edit;
+    const idDelete = e.target?.dataset?.delete;
+    if (idRes) await rescheduleMeeting(idRes);
+    if (idEdit) loadMeetingToForm(idEdit);
+    if (idDelete) await deleteMeeting(idDelete);
   });
 }
 

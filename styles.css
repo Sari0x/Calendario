@@ -80,6 +80,11 @@ p {
   gap: 10px;
 }
 
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .grid-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -150,9 +155,10 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 8px;
-  min-height: 46px;
+  min-height: 52px;
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 8px;
   background: #fff;
 }
@@ -160,16 +166,26 @@ textarea {
 .option-chip {
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 4px 10px;
   display: inline-flex;
-  gap: 8px;
   align-items: center;
+  gap: 6px;
   font-size: 13px;
   background: #f8f8fb;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .option-chip input {
   margin: 0;
+  order: -1;
+}
+
+.option-chip .chip-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
 }
 
 .avatar,
@@ -300,4 +316,9 @@ textarea {
   to {
     transform: rotate(360deg);
   }
+}
+
+.meeting-actions {
+  display:flex;
+  gap:8px;
 }

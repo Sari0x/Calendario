@@ -8,10 +8,11 @@ import {
   push,
   query,
   ref,
+  remove,
   set,
   update,
-  remove,
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBBaOij5CcHOtPSkiA56dOJnPmVlovimtY',
@@ -25,6 +26,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const rtdb = getDatabase(app);
+const storage = getStorage(app);
 const pageSize = 6;
 
 const $ = (id) => document.getElementById(id);
@@ -36,9 +38,12 @@ const appNotice = $('appNotice');
 let providers = [];
 let participants = [];
 let meetings = [];
+let filteredMeetings = [];
+let countdownInterval = null;
 let currentPage = 1;
 let totalPages = 1;
 let activeFilterDate = null;
+let activeQuickFilter = 'all';
 let editingMeetingId = null;
 let editingProviderId = null;
 let editingParticipantId = null;
@@ -66,6 +71,12 @@ function showNotice(message) {
   appNotice.classList.remove('hidden');
 }
 
+function scrollToMeetingForm() {
+  const formSection = $('meetingFormSection');
+  formSection.classList.remove('collapsed');
+  formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function randomColor(seed) {
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) hash = seed.charCodeAt(i) + ((hash << 5) - hash);
@@ -89,10 +100,40 @@ function meetingStatus(meeting) {
   const start = new Date(meeting.startAt);
   const end = new Date(start.getTime() + meeting.duration * 60000);
   const today = now.toDateString() === start.toDateString();
-  if (end < now) return 'vencida';
-  if (start <= now && now < end) return 'en-curso';
-  if (today) return 'hoy';
-  return 'proxima';
+  if (end < now) return 'finished';
+  if (start <= now && now < end) return 'in_progress';
+  if (today) return 'today';
+  return 'upcoming';
+}
+
+function getWeekRange(baseDate = new Date()) {
+  const date = new Date(baseDate);
+  const day = date.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(date);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(date.getDate() + diffToMonday);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return { start: monday, end: sunday };
+}
+
+function countdownLabel(startAt) {
+  const now = new Date();
+  const start = new Date(startAt);
+  const diffMs = start - now;
+  if (diffMs <= 0) return 'Inicia pronto';
+
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) return `Faltan ${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `Faltan ${hours}h ${minutes}m`;
+  return `Faltan ${minutes}m`;
 }
 
 function normalizeSnapshot(snapshotVal) {
@@ -122,10 +163,8 @@ function getPickerMeta(type) {
   const isProvider = type === 'provider';
   return {
     type,
-    isProvider,
     containerId: isProvider ? 'providersPicker' : 'participantsPicker',
     list: isProvider ? providers : participants,
-    openLabel: isProvider ? '+ Proveedor' : '+ Participante',
     addLabel: isProvider ? '+ Agregar nuevo proveedor' : '+ Agregar nuevo participante',
   };
 }
@@ -165,10 +204,7 @@ function buildPicker(type) {
   const { query, open } = pickerUiState[type];
   const selectedIds = getSelectedIds(type);
   const selectedItems = list.filter((item) => selectedIds.has(item.id));
-  const availableItems = list.filter((item) => {
-    if (selectedIds.has(item.id)) return false;
-    return itemLabel(item, type).toLowerCase().includes(query.toLowerCase());
-  });
+  const availableItems = list.filter((item) => !selectedIds.has(item.id) && itemLabel(item, type).toLowerCase().includes(query.toLowerCase()));
 
   const suggestions = availableItems.map((item) => buildSuggestionRow(item, type)).join('');
   const noItems = '<div class="picker-empty">No hay coincidencias.</div>';
@@ -222,6 +258,7 @@ function renderCreatedLists() {
 function resetProviderForm() {
   editingProviderId = null;
   $('providersForm').reset();
+  $('providerImageFile').value = '';
   $('providersForm').querySelector('h3').textContent = 'Nuevo proveedor';
   $('saveProvider').textContent = 'Guardar';
 }
@@ -266,45 +303,54 @@ function openParticipantModal(editId = null) {
   $('participantsModal').showModal();
 }
 
-function badge(label, cls) {
-  return `<span class="badge ${cls}">${label}</span>`;
+function statusMeta(status) {
+  if (status === 'finished') return { text: 'Finalizada', cls: 'finished', icon: 'bi-check2-circle' };
+  if (status === 'in_progress') return { text: 'En curso', cls: 'in-progress', icon: 'bi-play-fill' };
+  if (status === 'today') return { text: 'Hoy', cls: 'today', icon: 'bi-sun-fill' };
+  return { text: 'Próxima', cls: 'upcoming', icon: 'bi-calendar2-event' };
 }
 
 function meetingCard(meeting) {
   const status = meetingStatus(meeting);
-  const disabled = status === 'vencida';
-  const providersHtml = (meeting.providers || [])
-    .map((p) => `<span class="option-chip"><img class="provider-img" src="${p.image}" alt="${p.name}"/><span class="chip-text">${p.name}</span></span>`)
+  const isFinished = status === 'finished';
+  const meta = statusMeta(status);
+
+  const providerList = (meeting.providers || [])
+    .map((p) => `<img class="provider-thumb" src="${p.image}" alt="${p.name}" title="${p.name}" />`)
     .join('');
-  const participantsHtml = (meeting.participants || [])
-    .map(
-      (p) =>
-        `<span class="option-chip"><span class="avatar" style="background:${p.color}">${p.initials}</span><span class="chip-text">${p.name} ${p.lastName}</span></span>`,
-    )
+  const participantList = (meeting.participants || [])
+    .map((p) => `<li><i class="bi bi-person-circle"></i><span>${p.name} ${p.lastName}</span></li>`)
     .join('');
 
   const linkType = parseLinkType(meeting.link);
-  const linkIcon = linkType ? `<img class="provider-img" src="${providerIcons[linkType]}" alt="${linkType}"/>` : '';
-  const statusBadge =
-    status === 'vencida'
-      ? badge('Vencida', 'vencida')
-      : status === 'en-curso'
-      ? badge('En curso', 'en-curso')
-      : status === 'hoy'
-      ? badge('Hoy (no vencida)', 'hoy')
-      : badge('Próxima', 'proxima');
+  const linkIcon = linkType ? `<img class="provider-inline-icon" src="${providerIcons[linkType]}" alt="${linkType}"/>` : '<i class="bi bi-camera-video"></i>';
+  const countdown = !isFinished ? `<span class="countdown" data-countdown="${meeting.startAt}">${countdownLabel(meeting.startAt)}</span>` : '';
 
-  return `<article class="meeting-item ${disabled ? 'disabled' : ''}">
-    <div><strong>${esFmt.format(new Date(meeting.startAt))}</strong></div>
-    <div class="badges">${statusBadge}${meeting.link ? badge('Link', 'link') : ''}</div>
-    <div>${meeting.note || 'Sin nota'}</div>
-    <div class="providers">${providersHtml || '<em>Sin proveedores</em>'}</div>
-    <div class="participants">${participantsHtml || '<em>Sin participantes</em>'}</div>
-    ${meeting.link ? `<a href="${meeting.link}" target="_blank" rel="noreferrer">${linkIcon} Abrir reunión</a>` : '<span>Sin link</span>'}
+  return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''}">
+    <div class="meeting-top">
+      <strong><i class="bi bi-clock-history"></i> ${esFmt.format(new Date(meeting.startAt))}</strong>
+      <span class="badge ${meta.cls}"><i class="bi ${meta.icon}"></i> ${meta.text}</span>
+    </div>
+
+    <div class="meeting-duration"><i class="bi bi-hourglass-split"></i> Duración: <strong>${meeting.duration || 60} min</strong></div>
+    ${countdown}
+
+    <p class="meeting-note"><i class="bi bi-journal-text"></i> ${meeting.note || 'Sin nota'}</p>
+
+    <div class="providers-row">${providerList || '<em>Sin proveedores</em>'}</div>
+
+    <ul class="participants-list">${participantList || '<li><i class="bi bi-person-x"></i><span>Sin participantes</span></li>'}</ul>
+
+    <div class="link-actions">
+      ${meeting.link ? `<a class="meeting-link" href="${meeting.link}" target="_blank" rel="noreferrer">${linkIcon}<span>Abrir reunión</span></a>` : '<span class="meeting-link muted"><i class="bi bi-link-45deg"></i> Sin link</span>'}
+      ${meeting.link ? `<button class="btn btn-pill btn-ghost btn-subtle" data-copy-link="${meeting.id}"><i class="bi bi-copy"></i> Copiar link</button>` : ''}
+      <button class="btn btn-pill btn-ghost btn-subtle" data-copy-summary="${meeting.id}"><i class="bi bi-whatsapp"></i> Copiar resumen</button>
+    </div>
+
     <div class="meeting-actions">
-      ${disabled ? `<button class="btn btn-pill btn-soft" data-reschedule="${meeting.id}">Reprogramar</button>` : ''}
-      <button class="btn btn-pill btn-ghost" data-edit="${meeting.id}">Editar</button>
-      <button class="btn btn-pill btn-ghost" data-delete="${meeting.id}">Eliminar</button>
+      ${isFinished ? `<button class="btn btn-pill btn-soft" data-reschedule="${meeting.id}"><i class="bi bi-arrow-repeat"></i> Reprogramar</button>` : ''}
+      <button class="btn btn-pill btn-ghost" data-edit="${meeting.id}"><i class="bi bi-pencil-square"></i></button>
+      ${!isFinished ? `<button class="btn btn-pill btn-ghost" data-delete="${meeting.id}"><i class="bi bi-trash3"></i></button>` : ''}
     </div>
   </article>`;
 }
@@ -316,6 +362,54 @@ function paginateRows(rows) {
   return rows.slice(start, start + pageSize);
 }
 
+function applyQuickFilter(rows) {
+  const now = new Date();
+  const thisWeek = getWeekRange(now);
+  const nextWeekStart = new Date(thisWeek.end);
+  nextWeekStart.setDate(thisWeek.end.getDate() + 1);
+  nextWeekStart.setHours(0, 0, 0, 0);
+  const nextWeek = getWeekRange(nextWeekStart);
+
+  return rows.filter((m) => {
+    const start = new Date(m.startAt);
+    const status = meetingStatus(m);
+
+    if (activeQuickFilter === 'in_progress') return status === 'in_progress';
+    if (activeQuickFilter === 'today') return start.toDateString() === now.toDateString();
+    if (activeQuickFilter === 'week') return start >= thisWeek.start && start <= thisWeek.end;
+    if (activeQuickFilter === 'next_week') return start >= nextWeek.start && start <= nextWeek.end;
+    if (activeQuickFilter === 'finished') return status === 'finished';
+    return true;
+  });
+}
+
+function sortMeetings(rows) {
+  return rows.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+}
+
+function renderCurrentPage() {
+  meetings = paginateRows(filteredMeetings);
+  meetingsList.innerHTML = meetings.length ? meetings.map(meetingCard).join('') : '<p>No hay reuniones para este filtro.</p>';
+  pageInfo.textContent = `Página ${currentPage} de ${totalPages}`;
+  $('prevPage').disabled = currentPage === 1;
+  $('nextPage').disabled = currentPage >= totalPages;
+  startCountdowns();
+}
+
+function startCountdowns() {
+  if (countdownInterval) window.clearInterval(countdownInterval);
+
+  const updateCountdowns = () => {
+    document.querySelectorAll('[data-countdown]').forEach((el) => {
+      const meetingStart = el.dataset.countdown;
+      if (meetingStart) el.textContent = countdownLabel(meetingStart);
+    });
+  };
+
+  updateCountdowns();
+  countdownInterval = window.setInterval(updateCountdowns, 60000);
+}
+
 async function loadReferences() {
   providers = await loadCollection('providers');
   participants = await loadCollection('participants');
@@ -324,6 +418,7 @@ async function loadReferences() {
 
 async function fetchMeetings() {
   showSpinner(true);
+  meetingsList.innerHTML = '';
   try {
     let rows = [];
     if (activeFilterDate) {
@@ -333,13 +428,8 @@ async function fetchMeetings() {
       rows = await loadCollection('meetings');
     }
 
-    rows.sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
-    meetings = paginateRows(rows);
-
-    meetingsList.innerHTML = meetings.length ? meetings.map(meetingCard).join('') : '<p>No hay reuniones.</p>';
-    pageInfo.textContent = `Página ${currentPage} de ${totalPages}`;
-    $('prevPage').disabled = currentPage === 1;
-    $('nextPage').disabled = currentPage >= totalPages;
+    filteredMeetings = sortMeetings(applyQuickFilter(rows));
+    renderCurrentPage();
   } catch (error) {
     showNotice('No se pudieron cargar reuniones desde Realtime Database.');
     meetingsList.innerHTML = '<p>No se pudieron cargar reuniones.</p>';
@@ -352,8 +442,25 @@ async function fetchMeetings() {
 async function onSaveProvider(e) {
   e.preventDefault();
   const name = $('providerName').value.trim();
-  const image = $('providerImage').value.trim();
-  if (!name || !image) return;
+  const imageUrl = $('providerImage').value.trim();
+  const imageFile = $('providerImageFile').files?.[0];
+  if (!name) return;
+
+  let image = imageUrl;
+  if (imageFile) {
+    const filePath = `providers/${Date.now()}-${imageFile.name.replace(/\\s+/g, '-')}`;
+    const uploaded = await uploadBytes(storageRef(storage, filePath), imageFile);
+    image = await getDownloadURL(uploaded.ref);
+  }
+
+  if (!image) {
+    await Swal.fire({
+      icon: 'info',
+      title: 'Falta imagen',
+      text: 'Podés pegar una URL o subir un archivo.',
+    });
+    return;
+  }
 
   if (editingProviderId) {
     await update(ref(rtdb, `providers/${editingProviderId}`), { name, image, updatedAt: new Date().toISOString() });
@@ -392,6 +499,26 @@ async function onSaveParticipant(e) {
   await loadReferences();
 }
 
+function resetMeetingForm({ keepOpen = false } = {}) {
+  $('meetingDate').value = '';
+  $('meetingDate')._flatpickr?.clear();
+  $('meetingTime').value = '';
+  $('meetingDuration').value = '60';
+  $('meetingNote').value = '';
+  $('meetingLink').value = '';
+  setSelectedIds('provider', new Set());
+  setSelectedIds('participant', new Set());
+  pickerUiState.provider.query = '';
+  pickerUiState.participant.query = '';
+  pickerUiState.provider.open = false;
+  pickerUiState.participant.open = false;
+  editingMeetingId = null;
+  $('cancelEdit').classList.add('hidden');
+  $('saveMeeting').innerHTML = '<i class="bi bi-floppy"></i> Cargar evento';
+  if (!keepOpen) $('meetingFormSection').classList.add('collapsed');
+  renderPickers();
+}
+
 async function onSaveMeeting() {
   const day = $('meetingDate').value;
   const time = $('meetingTime').value;
@@ -414,32 +541,32 @@ async function onSaveMeeting() {
       .map(({ id, name, lastName, email, initials: ini, color }) => ({ id, name, lastName, email, initials: ini, color })),
   };
 
+  const confirmation = await Swal.fire({
+    icon: 'question',
+    title: editingMeetingId ? '¿Guardar cambios de la reunión?' : '¿Cargar nuevo evento?',
+    text: 'Confirmá para guardar o cancelá para cerrar el editor sin guardar.',
+    showCancelButton: true,
+    confirmButtonText: editingMeetingId ? 'Sí, guardar' : 'Sí, cargar',
+    cancelButtonText: 'Cancelar y cerrar',
+  });
+
+  if (!confirmation.isConfirmed) {
+    resetMeetingForm();
+    return;
+  }
+
   if (editingMeetingId) {
     await update(ref(rtdb, `meetings/${editingMeetingId}`), { ...payload, updatedAt: new Date().toISOString() });
   } else {
     await saveCollectionItem('meetings', payload);
   }
 
-  $('meetingDate').value = '';
-  $('meetingTime').value = '';
-  $('meetingDuration').value = '60';
-  $('meetingNote').value = '';
-  $('meetingLink').value = '';
-  setSelectedIds('provider', new Set());
-  setSelectedIds('participant', new Set());
-  pickerUiState.provider.query = '';
-  pickerUiState.participant.query = '';
-  pickerUiState.provider.open = false;
-  pickerUiState.participant.open = false;
-  editingMeetingId = null;
-  $('cancelEdit').classList.add('hidden');
-  $('saveMeeting').textContent = 'Cargar evento';
-  renderPickers();
+  resetMeetingForm();
   await fetchMeetings();
 }
 
 function loadMeetingToForm(id) {
-  const row = meetings.find((m) => m.id === id);
+  const row = filteredMeetings.find((m) => m.id === id);
   if (!row) return;
   const dt = new Date(row.startAt);
   $('meetingDate').value = row.dateKey;
@@ -452,18 +579,30 @@ function loadMeetingToForm(id) {
   setSelectedIds('participant', new Set((row.participants || []).map((p) => p.id)));
   editingMeetingId = id;
   $('cancelEdit').classList.remove('hidden');
-  $('saveMeeting').textContent = 'Guardar cambios';
+  $('saveMeeting').innerHTML = '<i class="bi bi-floppy"></i> Guardar cambios';
+  $('meetingFormSection').classList.remove('collapsed');
   renderPickers();
 }
 
 async function deleteMeeting(id) {
-  if (!confirm('¿Eliminar esta reunión?')) return;
+  const row = filteredMeetings.find((m) => m.id === id);
+  if (!row) return;
+  if (meetingStatus(row) === 'finished') return;
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: '¿Eliminar reunión activa?',
+    text: 'Esta acción quita la reunión del calendario.',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'No',
+  });
+  if (!result.isConfirmed) return;
   await set(ref(rtdb, `meetings/${id}`), null);
   await fetchMeetings();
 }
 
 async function rescheduleMeeting(id) {
-  const row = meetings.find((m) => m.id === id);
+  const row = filteredMeetings.find((m) => m.id === id);
   if (!row) return;
   const next = new Date(row.startAt);
   next.setDate(next.getDate() + 1);
@@ -503,6 +642,22 @@ async function deleteParticipant(id) {
   if (!result.isConfirmed) return;
   await remove(ref(rtdb, `participants/${id}`));
   await loadReferences();
+}
+
+function buildMeetingSummary(meeting) {
+  const providersSummary = (meeting.providers || []).map((p) => p.name).join(', ') || 'Sin proveedores';
+  const participantsSummary = (meeting.participants || []).map((p) => `${p.name} ${p.lastName}`).join(', ') || 'Sin participantes';
+  const when = esFmt.format(new Date(meeting.startAt));
+  return `📅 Reunión: ${when}\n⏱️ Duración: ${meeting.duration || 60} min\n📝 Nota: ${meeting.note || 'Sin nota'}\n👥 Participantes: ${participantsSummary}\n🏢 Proveedores: ${providersSummary}\n🔗 Link: ${meeting.link || 'Sin link'}`;
+}
+
+async function copyToClipboard(content, okMessage) {
+  try {
+    await navigator.clipboard.writeText(content);
+    await Swal.fire({ icon: 'success', title: 'Copiado', text: okMessage, timer: 1300, showConfirmButton: false });
+  } catch (error) {
+    await Swal.fire({ icon: 'error', title: 'No se pudo copiar', text: 'Revisá permisos del navegador.' });
+  }
 }
 
 function bindPickerEvents(type) {
@@ -559,8 +714,13 @@ function bindPickerEvents(type) {
 }
 
 function bindEvents() {
+  $('openMeetingForm').addEventListener('click', () => {
+    scrollToMeetingForm();
+  });
+  $('saveMeetingFloating').addEventListener('click', onSaveMeeting);
   $('openProvidersModal').addEventListener('click', () => openProviderModal());
   $('openParticipantsModal').addEventListener('click', () => openParticipantModal());
+
   $('cancelProvider').addEventListener('click', () => {
     $('providersModal').close();
     resetProviderForm();
@@ -573,11 +733,7 @@ function bindEvents() {
   $('providersForm').addEventListener('submit', onSaveProvider);
   $('participantsForm').addEventListener('submit', onSaveParticipant);
   $('saveMeeting').addEventListener('click', onSaveMeeting);
-  $('cancelEdit').addEventListener('click', () => {
-    editingMeetingId = null;
-    $('cancelEdit').classList.add('hidden');
-    $('saveMeeting').textContent = 'Cargar evento';
-  });
+  $('cancelEdit').addEventListener('click', () => resetMeetingForm());
 
   bindPickerEvents('provider');
   bindPickerEvents('participant');
@@ -612,22 +768,47 @@ function bindEvents() {
     await fetchMeetings();
   });
 
-  $('prevPage').addEventListener('click', async () => {
-    if (currentPage > 1) currentPage -= 1;
-    await fetchMeetings();
-  });
-  $('nextPage').addEventListener('click', async () => {
-    if (currentPage < totalPages) currentPage += 1;
+  $('quickFilters').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-filter]');
+    if (!btn) return;
+    activeQuickFilter = btn.dataset.filter;
+    currentPage = 1;
+    document.querySelectorAll('.quick-filter').forEach((item) => item.classList.toggle('active', item === btn));
     await fetchMeetings();
   });
 
+  $('prevPage').addEventListener('click', async () => {
+    if (currentPage > 1) currentPage -= 1;
+    renderCurrentPage();
+  });
+  $('nextPage').addEventListener('click', async () => {
+    if (currentPage < totalPages) currentPage += 1;
+    renderCurrentPage();
+  });
+
+  $('scrollUpBtn').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  $('scrollDownBtn').addEventListener('click', () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+
   meetingsList.addEventListener('click', async (e) => {
-    const idRes = e.target?.dataset?.reschedule;
-    const idEdit = e.target?.dataset?.edit;
-    const idDelete = e.target?.dataset?.delete;
+    const idRes = e.target.closest('[data-reschedule]')?.dataset?.reschedule;
+    const idEdit = e.target.closest('[data-edit]')?.dataset?.edit;
+    const idDelete = e.target.closest('[data-delete]')?.dataset?.delete;
+    const idCopyLink = e.target.closest('[data-copy-link]')?.dataset?.copyLink;
+    const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     if (idRes) await rescheduleMeeting(idRes);
-    if (idEdit) loadMeetingToForm(idEdit);
+    if (idEdit) {
+      loadMeetingToForm(idEdit);
+      scrollToMeetingForm();
+    }
     if (idDelete) await deleteMeeting(idDelete);
+    if (idCopyLink) {
+      const row = filteredMeetings.find((m) => m.id === idCopyLink);
+      if (row?.link) await copyToClipboard(row.link, 'Link copiado al portapapeles.');
+    }
+    if (idCopySummary) {
+      const row = filteredMeetings.find((m) => m.id === idCopySummary);
+      if (row) await copyToClipboard(buildMeetingSummary(row), 'Resumen copiado para compartir por WhatsApp.');
+    }
   });
 }
 

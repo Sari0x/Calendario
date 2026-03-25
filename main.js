@@ -47,6 +47,7 @@ let activeQuickFilter = 'all';
 let editingMeetingId = null;
 let editingProviderId = null;
 let editingParticipantId = null;
+let nearestMeetingId = null;
 
 const pickerUiState = {
   provider: { query: '', open: false },
@@ -74,7 +75,10 @@ function showNotice(message) {
 function scrollToMeetingForm() {
   const formSection = $('meetingFormSection');
   formSection.classList.remove('collapsed');
-  formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const headerHeight = document.querySelector('.topbar')?.offsetHeight || 0;
+  const safeGap = 16;
+  const top = formSection.getBoundingClientRect().top + window.scrollY - headerHeight - safeGap;
+  window.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
 }
 
 function randomColor(seed) {
@@ -314,6 +318,7 @@ function meetingCard(meeting) {
   const status = meetingStatus(meeting);
   const isFinished = status === 'finished';
   const meta = statusMeta(status);
+  const isNearest = meeting.id === nearestMeetingId;
 
   const providerList = (meeting.providers || [])
     .map((p) => `<img class="provider-thumb" src="${p.image}" alt="${p.name}" title="${p.name}" />`)
@@ -324,9 +329,16 @@ function meetingCard(meeting) {
 
   const linkType = parseLinkType(meeting.link);
   const linkIcon = linkType ? `<img class="provider-inline-icon" src="${providerIcons[linkType]}" alt="${linkType}"/>` : '<i class="bi bi-camera-video"></i>';
-  const countdown = !isFinished ? `<span class="countdown" data-countdown="${meeting.startAt}">${countdownLabel(meeting.startAt)}</span>` : '';
+  let countdown = '';
+  if (!isFinished) {
+    if (status === 'in_progress') {
+      countdown = '<span class="countdown in-progress"><i class="bi bi-broadcast-pin"></i> En curso ahora</span>';
+    } else {
+      countdown = `<span class="countdown alert-upcoming" data-countdown="${meeting.startAt}"><i class="bi bi-alarm"></i> ${countdownLabel(meeting.startAt)}</span>`;
+    }
+  }
 
-  return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''}">
+  return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''} ${isNearest ? 'is-nearest' : ''}">
     <div class="meeting-top">
       <strong><i class="bi bi-clock-history"></i> ${esFmt.format(new Date(meeting.startAt))}</strong>
       <span class="badge ${meta.cls}"><i class="bi ${meta.icon}"></i> ${meta.text}</span>
@@ -387,7 +399,21 @@ function sortMeetings(rows) {
   return rows.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
 }
 
+function getNearestMeetingId(rows) {
+  const now = Date.now();
+  const activeRows = rows.filter((row) => meetingStatus(row) !== 'finished');
+  if (!activeRows.length) return null;
+
+  const upcoming = activeRows.filter((row) => new Date(row.startAt).getTime() >= now);
+  if (upcoming.length) {
+    return upcoming.sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0].id;
+  }
+
+  return activeRows.sort((a, b) => new Date(b.startAt) - new Date(a.startAt))[0].id;
+}
+
 function renderCurrentPage() {
+  nearestMeetingId = getNearestMeetingId(filteredMeetings);
   meetings = paginateRows(filteredMeetings);
   meetingsList.innerHTML = meetings.length ? meetings.map(meetingCard).join('') : '<p>No hay reuniones para este filtro.</p>';
   pageInfo.textContent = `Página ${currentPage} de ${totalPages}`;
@@ -400,9 +426,9 @@ function startCountdowns() {
   if (countdownInterval) window.clearInterval(countdownInterval);
 
   const updateCountdowns = () => {
-    document.querySelectorAll('[data-countdown]').forEach((el) => {
+    document.querySelectorAll('.countdown.alert-upcoming[data-countdown]').forEach((el) => {
       const meetingStart = el.dataset.countdown;
-      if (meetingStart) el.textContent = countdownLabel(meetingStart);
+      if (meetingStart) el.innerHTML = `<i class="bi bi-alarm"></i> ${countdownLabel(meetingStart)}`;
     });
   };
 
@@ -448,9 +474,16 @@ async function onSaveProvider(e) {
 
   let image = imageUrl;
   if (imageFile) {
-    const filePath = `providers/${Date.now()}-${imageFile.name.replace(/\\s+/g, '-')}`;
-    const uploaded = await uploadBytes(storageRef(storage, filePath), imageFile);
-    image = await getDownloadURL(uploaded.ref);
+    $('providerUploadSpinner').classList.remove('hidden');
+    $('saveProvider').disabled = true;
+    try {
+      const filePath = `providers/${Date.now()}-${imageFile.name.replace(/\\s+/g, '-')}`;
+      const uploaded = await uploadBytes(storageRef(storage, filePath), imageFile);
+      image = await getDownloadURL(uploaded.ref);
+    } finally {
+      $('providerUploadSpinner').classList.add('hidden');
+      $('saveProvider').disabled = false;
+    }
   }
 
   if (!image) {
@@ -767,6 +800,13 @@ function bindEvents() {
   $('participantsForm').addEventListener('submit', onSaveParticipant);
   $('saveMeeting').addEventListener('click', onSaveMeeting);
   $('cancelEdit').addEventListener('click', () => resetMeetingForm());
+  $('cancelCreateMeeting').addEventListener('click', async () => {
+    if (hasMeetingDraft()) {
+      const shouldDiscard = await confirmDiscardDraft();
+      if (!shouldDiscard) return;
+    }
+    resetMeetingForm();
+  });
 
   bindPickerEvents('provider');
   bindPickerEvents('participant');

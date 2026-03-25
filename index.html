@@ -35,6 +35,7 @@
         <div class="card-header">
           <h2><i class="bi bi-calendar2-plus"></i> Nueva reunión</h2>
           <div class="header-actions">
+            <button id="cancelCreateMeeting" class="btn btn-pill btn-ghost"><i class="bi bi-x-lg"></i> Cancelar</button>
             <button id="cancelEdit" class="btn btn-pill btn-ghost hidden"><i class="bi bi-x-circle"></i> Cancelar edición</button>
             <button id="saveMeeting" class="btn btn-pill btn-primary"><i class="bi bi-floppy"></i> Cargar evento</button>
           </div>
@@ -96,9 +97,13 @@
     <dialog id="providersModal" class="modal">
       <form id="providersForm" class="modal-content">
         <h3>Nuevo proveedor</h3>
-          <label>Nombre <input id="providerName" type="text" required /></label>
+        <label>Nombre <input id="providerName" type="text" required /></label>
         <label>Imagen (URL) <input id="providerImage" type="url" placeholder="https://..." /></label>
         <label>o Subir imagen <input id="providerImageFile" type="file" accept="image/*" /></label>
+        <div id="providerUploadSpinner" class="upload-spinner hidden">
+          <span class="spinner mini"></span>
+          <span>Subiendo imagen...</span>
+        </div>
         <div class="modal-list-wrap">
           <strong>Proveedores creados</strong>
           <div id="providersCreatedList" class="created-list"></div>

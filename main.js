@@ -1,17 +1,16 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import {
-  addDoc,
-  collection,
-  doc,
-  getDocs,
-  getFirestore,
-  limit,
-  orderBy,
+  get,
+  getDatabase,
+  push,
   query,
-  serverTimestamp,
-  updateDoc,
-  where,
-} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
+  ref,
+  set,
+  update,
+  orderByChild,
+  equalTo,
+  limitToFirst,
+} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBBaOij5CcHOtPSkiA56dOJnPmVlovimtY',
@@ -23,7 +22,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const rtdb = getDatabase(app);
 const pageSize = 6;
 
 const $ = (id) => document.getElementById(id);
@@ -38,7 +37,13 @@ let meetings = [];
 let currentPage = 1;
 let totalPages = 1;
 let activeFilterDate = null;
-let storageMode = 'firestore';
+let storageMode = 'rtdb';
+
+const localKeys = {
+  providers: 'calendario.providers.v1',
+  participants: 'calendario.participants.v1',
+  meetings: 'calendario.meetings.v1',
+};
 
 const providerIcons = {
   meet: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/Google_Meet_icon_%282020%29.svg/960px-Google_Meet_icon_%282020%29.svg.png',
@@ -48,29 +53,21 @@ const providerIcons = {
 };
 
 const esFmt = new Intl.DateTimeFormat('es-ES', { dateStyle: 'full', timeStyle: 'short' });
-
-const localKeys = {
-  providers: 'calendario.providers.v1',
-  participants: 'calendario.participants.v1',
-  meetings: 'calendario.meetings.v1',
-};
-
 const uid = () => (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+const readLocal = (name) => JSON.parse(localStorage.getItem(localKeys[name]) || '[]');
+const writeLocal = (name, data) => localStorage.setItem(localKeys[name], JSON.stringify(data));
+const showSpinner = (show) => spinner.classList.toggle('hidden', !show);
 
 function showNotice(message) {
   appNotice.textContent = message;
   appNotice.classList.remove('hidden');
 }
 
-function showSpinner(show) {
-  spinner.classList.toggle('hidden', !show);
-}
-
 function randomColor(seed) {
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) hash = seed.charCodeAt(i) + ((hash << 5) - hash);
-  const h = Math.abs(hash) % 360;
-  return `hsl(${h}deg 65% 45%)`;
+  return `hsl(${Math.abs(hash) % 360}deg 65% 45%)`;
 }
 
 function initials(name, lastName) {
@@ -90,19 +87,41 @@ function meetingStatus(meeting) {
   const start = new Date(meeting.startAt);
   const end = new Date(start.getTime() + meeting.duration * 60000);
   const today = now.toDateString() === start.toDateString();
-
   if (end < now) return 'vencida';
   if (start <= now && now < end) return 'en-curso';
   if (today) return 'hoy';
   return 'proxima';
 }
 
-function readLocal(name) {
-  return JSON.parse(localStorage.getItem(localKeys[name]) || '[]');
+function normalizeSnapshot(snapshotVal = {}) {
+  return Object.entries(snapshotVal).map(([id, value]) => ({ id, ...value }));
 }
 
-function writeLocal(name, data) {
-  localStorage.setItem(localKeys[name], JSON.stringify(data));
+async function verifyRTDBAccess() {
+  try {
+    await get(query(ref(rtdb, 'meetings'), limitToFirst(1)));
+    storageMode = 'rtdb';
+  } catch (error) {
+    storageMode = 'local';
+    showNotice('No se pudo usar Realtime Database (reglas/permisos). Se activó modo local.');
+    console.error('RTDB error, fallback local:', error);
+  }
+}
+
+async function loadCollection(name) {
+  if (storageMode === 'local') return readLocal(name);
+  const snap = await get(ref(rtdb, name));
+  return normalizeSnapshot(snap.val());
+}
+
+async function saveCollectionItem(name, data) {
+  if (storageMode === 'local') {
+    const current = readLocal(name);
+    current.push({ id: uid(), ...data, createdAt: new Date().toISOString() });
+    writeLocal(name, current);
+    return;
+  }
+  await set(push(ref(rtdb, name)), { ...data, createdAt: new Date().toISOString() });
 }
 
 function buildMultiPicker(items, selectedIds, type) {
@@ -124,56 +143,6 @@ function renderPickers() {
   const selectedParticipants = new Set(($('participantsPicker').dataset.selected || '').split(',').filter(Boolean));
   $('providersPicker').innerHTML = buildMultiPicker(providers, selectedProviders, 'provider');
   $('participantsPicker').innerHTML = buildMultiPicker(participants, selectedParticipants, 'participant');
-}
-
-function syncPickerSelection() {
-  $('providersPicker').addEventListener('change', () => {
-    const ids = [...document.querySelectorAll('[data-provider]:checked')].map((el) => el.dataset.provider);
-    $('providersPicker').dataset.selected = ids.join(',');
-  });
-  $('participantsPicker').addEventListener('change', () => {
-    const ids = [...document.querySelectorAll('[data-participant]:checked')].map((el) => el.dataset.participant);
-    $('participantsPicker').dataset.selected = ids.join(',');
-  });
-}
-
-async function verifyFirestoreAccess() {
-  try {
-    await getDocs(query(collection(db, 'meetings'), limit(1)));
-    storageMode = 'firestore';
-  } catch (error) {
-    storageMode = 'local';
-    showNotice(
-      'No se pudo usar Firestore (API deshabilitada o reglas insuficientes). Se activó modo local (localStorage) para que la app funcione igual.',
-    );
-    console.error('Firestore no disponible, usando localStorage:', error);
-  }
-}
-
-async function loadReferences() {
-  if (storageMode === 'local') {
-    providers = readLocal('providers');
-    participants = readLocal('participants');
-    renderPickers();
-    return;
-  }
-
-  try {
-    const [providersSnap, participantsSnap] = await Promise.all([
-      getDocs(query(collection(db, 'providers'), orderBy('name'))),
-      getDocs(query(collection(db, 'participants'), orderBy('name'))),
-    ]);
-    providers = providersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    participants = participantsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    renderPickers();
-  } catch (error) {
-    storageMode = 'local';
-    showNotice('Error leyendo Firestore. Continuamos con almacenamiento local para evitar bloqueos.');
-    providers = readLocal('providers');
-    participants = readLocal('participants');
-    renderPickers();
-    console.error(error);
-  }
 }
 
 function badge(label, cls) {
@@ -218,26 +187,39 @@ function meetingCard(meeting) {
 function paginateRows(rows) {
   totalPages = Math.max(Math.ceil(rows.length / pageSize), 1);
   currentPage = Math.min(currentPage, totalPages);
-  const offset = (currentPage - 1) * pageSize;
-  return rows.slice(offset, offset + pageSize);
+  const start = (currentPage - 1) * pageSize;
+  return rows.slice(start, start + pageSize);
+}
+
+async function loadReferences() {
+  try {
+    providers = await loadCollection('providers');
+    participants = await loadCollection('participants');
+    renderPickers();
+  } catch (error) {
+    storageMode = 'local';
+    showNotice('Fallo de conexión con Realtime Database. Se activa localStorage.');
+    providers = readLocal('providers');
+    participants = readLocal('participants');
+    renderPickers();
+    console.error(error);
+  }
 }
 
 async function fetchMeetings() {
   showSpinner(true);
   try {
     let rows = [];
-
     if (storageMode === 'local') {
       rows = readLocal('meetings');
-      rows.sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
+    } else if (activeFilterDate) {
+      const snap = await get(query(ref(rtdb, 'meetings'), orderByChild('dateKey'), equalTo(activeFilterDate)));
+      rows = normalizeSnapshot(snap.val());
     } else {
-      const base = activeFilterDate
-        ? query(collection(db, 'meetings'), where('dateKey', '==', activeFilterDate), orderBy('startAt', 'desc'))
-        : query(collection(db, 'meetings'), orderBy('startAt', 'desc'));
-      const snap = await getDocs(base);
-      rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      rows = await loadCollection('meetings');
     }
 
+    rows.sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
     if (activeFilterDate) rows = rows.filter((m) => m.dateKey === activeFilterDate);
     meetings = paginateRows(rows);
 
@@ -246,58 +228,41 @@ async function fetchMeetings() {
     $('prevPage').disabled = currentPage === 1;
     $('nextPage').disabled = currentPage >= totalPages;
   } catch (error) {
+    showNotice('No se pudieron cargar reuniones.');
     meetingsList.innerHTML = '<p>No se pudieron cargar reuniones.</p>';
-    showNotice('Error al cargar reuniones. Revisá la consola para detalles.');
     console.error(error);
   } finally {
     showSpinner(false);
   }
 }
 
-async function saveProvider(e) {
+async function onSaveProvider(e) {
   e.preventDefault();
   const name = $('providerName').value.trim();
   const image = $('providerImage').value.trim();
   if (!name || !image) return;
 
-  if (storageMode === 'local') {
-    const current = readLocal('providers');
-    current.push({ id: uid(), name, image, createdAt: new Date().toISOString() });
-    writeLocal('providers', current);
-  } else {
-    await addDoc(collection(db, 'providers'), { name, image, createdAt: serverTimestamp() });
-  }
-
+  await saveCollectionItem('providers', { name, image });
   $('providerName').value = '';
   $('providerImage').value = '';
   $('providersModal').close();
   await loadReferences();
 }
 
-async function saveParticipant(e) {
+async function onSaveParticipant(e) {
   e.preventDefault();
   const name = $('participantName').value.trim();
   const lastName = $('participantLastName').value.trim();
   const email = $('participantEmail').value.trim();
   if (!name || !lastName || !email) return;
 
-  const inits = initials(name, lastName);
-  const color = randomColor(`${name}${lastName}${email}`);
-
-  if (storageMode === 'local') {
-    const current = readLocal('participants');
-    current.push({ id: uid(), name, lastName, email, initials: inits, color, createdAt: new Date().toISOString() });
-    writeLocal('participants', current);
-  } else {
-    await addDoc(collection(db, 'participants'), {
-      name,
-      lastName,
-      email,
-      initials: inits,
-      color,
-      createdAt: serverTimestamp(),
-    });
-  }
+  await saveCollectionItem('participants', {
+    name,
+    lastName,
+    email,
+    initials: initials(name, lastName),
+    color: randomColor(`${name}${lastName}${email}`),
+  });
 
   $('participantName').value = '';
   $('participantLastName').value = '';
@@ -306,39 +271,27 @@ async function saveParticipant(e) {
   await loadReferences();
 }
 
-async function saveMeeting() {
+async function onSaveMeeting() {
   const day = $('meetingDate').value;
   const time = $('meetingTime').value;
-  const duration = Number($('meetingDuration').value || 60);
   if (!day || !time) return alert('Seleccioná fecha y hora');
-
   const startAt = new Date(`${day}T${time}`);
   if (Number.isNaN(startAt.getTime())) return alert('Fecha/hora inválida');
 
   const selectedProviderIds = ($('providersPicker').dataset.selected || '').split(',').filter(Boolean);
   const selectedParticipantIds = ($('participantsPicker').dataset.selected || '').split(',').filter(Boolean);
 
-  const payload = {
+  await saveCollectionItem('meetings', {
     startAt: startAt.toISOString(),
-    duration,
+    duration: Number($('meetingDuration').value || 60),
     dateKey: startAt.toISOString().slice(0, 10),
     note: $('meetingNote').value.trim(),
     link: $('meetingLink').value.trim(),
-    providers: providers
-      .filter((p) => selectedProviderIds.includes(p.id))
-      .map(({ id, name, image }) => ({ id, name, image })),
+    providers: providers.filter((p) => selectedProviderIds.includes(p.id)).map(({ id, name, image }) => ({ id, name, image })),
     participants: participants
       .filter((p) => selectedParticipantIds.includes(p.id))
       .map(({ id, name, lastName, email, initials: ini, color }) => ({ id, name, lastName, email, initials: ini, color })),
-  };
-
-  if (storageMode === 'local') {
-    const current = readLocal('meetings');
-    current.push({ id: uid(), ...payload, createdAt: new Date().toISOString() });
-    writeLocal('meetings', current);
-  } else {
-    await addDoc(collection(db, 'meetings'), { ...payload, createdAt: serverTimestamp() });
-  }
+  });
 
   $('meetingDate').value = '';
   $('meetingTime').value = '';
@@ -352,24 +305,64 @@ async function saveMeeting() {
 }
 
 async function rescheduleMeeting(id) {
-  const current = meetings.find((m) => m.id === id);
-  if (!current) return;
-  const next = new Date(current.startAt);
+  const row = meetings.find((m) => m.id === id);
+  if (!row) return;
+  const next = new Date(row.startAt);
   next.setDate(next.getDate() + 1);
 
   if (storageMode === 'local') {
-    const rows = readLocal('meetings').map((m) =>
+    const updated = readLocal('meetings').map((m) =>
       m.id === id ? { ...m, startAt: next.toISOString(), dateKey: next.toISOString().slice(0, 10) } : m,
     );
-    writeLocal('meetings', rows);
+    writeLocal('meetings', updated);
   } else {
-    await updateDoc(doc(db, 'meetings', id), {
+    await update(ref(rtdb, `meetings/${id}`), {
       startAt: next.toISOString(),
       dateKey: next.toISOString().slice(0, 10),
-      updatedAt: serverTimestamp(),
+      updatedAt: new Date().toISOString(),
     });
   }
+
   await fetchMeetings();
+}
+
+function bindEvents() {
+  $('openProvidersModal').addEventListener('click', () => $('providersModal').showModal());
+  $('openParticipantsModal').addEventListener('click', () => $('participantsModal').showModal());
+  $('cancelProvider').addEventListener('click', () => $('providersModal').close());
+  $('cancelParticipant').addEventListener('click', () => $('participantsModal').close());
+
+  $('providersForm').addEventListener('submit', onSaveProvider);
+  $('participantsForm').addEventListener('submit', onSaveParticipant);
+  $('saveMeeting').addEventListener('click', onSaveMeeting);
+
+  $('providersPicker').addEventListener('change', () => {
+    $('providersPicker').dataset.selected = [...document.querySelectorAll('[data-provider]:checked')].map((e) => e.dataset.provider).join(',');
+  });
+  $('participantsPicker').addEventListener('change', () => {
+    $('participantsPicker').dataset.selected = [...document.querySelectorAll('[data-participant]:checked')].map((e) => e.dataset.participant).join(',');
+  });
+
+  $('clearFilter').addEventListener('click', async () => {
+    $('filterDate')._flatpickr?.clear();
+    activeFilterDate = null;
+    currentPage = 1;
+    await fetchMeetings();
+  });
+
+  $('prevPage').addEventListener('click', async () => {
+    if (currentPage > 1) currentPage -= 1;
+    await fetchMeetings();
+  });
+  $('nextPage').addEventListener('click', async () => {
+    if (currentPage < totalPages) currentPage += 1;
+    await fetchMeetings();
+  });
+
+  meetingsList.addEventListener('click', async (e) => {
+    const id = e.target?.dataset?.reschedule;
+    if (id) await rescheduleMeeting(id);
+  });
 }
 
 function setupFlatpickr() {
@@ -380,7 +373,6 @@ function setupFlatpickr() {
     altFormat: 'l, j \\d\\e F \\d\\e Y',
     dateFormat: 'Y-m-d',
   });
-
   flatpickr('#filterDate', {
     locale: 'es',
     altInput: true,
@@ -394,42 +386,10 @@ function setupFlatpickr() {
   });
 }
 
-function bindEvents() {
-  $('openProvidersModal').addEventListener('click', () => $('providersModal').showModal());
-  $('openParticipantsModal').addEventListener('click', () => $('participantsModal').showModal());
-  $('saveProvider').addEventListener('click', saveProvider);
-  $('saveParticipant').addEventListener('click', saveParticipant);
-  $('saveMeeting').addEventListener('click', saveMeeting);
-
-  $('clearFilter').addEventListener('click', async () => {
-    $('filterDate')._flatpickr?.clear();
-    activeFilterDate = null;
-    currentPage = 1;
-    await fetchMeetings();
-  });
-
-  $('prevPage').addEventListener('click', async () => {
-    if (currentPage > 1) currentPage -= 1;
-    await fetchMeetings();
-  });
-
-  $('nextPage').addEventListener('click', async () => {
-    if (currentPage < totalPages) currentPage += 1;
-    await fetchMeetings();
-  });
-
-  meetingsList.addEventListener('click', async (e) => {
-    const id = e.target?.dataset?.reschedule;
-    if (id) await rescheduleMeeting(id);
-  });
-
-  syncPickerSelection();
-}
-
 (async function init() {
   setupFlatpickr();
   bindEvents();
-  await verifyFirestoreAccess();
+  await verifyRTDBAccess();
   await loadReferences();
   await fetchMeetings();
 })();

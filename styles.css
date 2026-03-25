@@ -52,7 +52,20 @@ p {
   top: 0;
   z-index: 60;
   border-bottom: 1px solid #ffffff8a;
-  background: rgba(244, 239, 255, 0.9);
+  background: linear-gradient(120deg, #19182a 0%, #252341 55%, #2b2a4c 100%);
+  color: #f3f4ff;
+}
+
+.topbar .btn-soft,
+.topbar .btn-primary,
+.topbar .btn-ghost {
+  border-color: #4a4a78;
+  color: #ececff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.topbar .btn-primary {
+  background: linear-gradient(120deg, #6c67ff 0%, #5b7bff 100%);
 }
 
 .brand-wrap {
@@ -324,13 +337,28 @@ textarea {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.filter select {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  background: #fff;
+}
+
+.quick-filters-wrap {
+  position: relative;
 }
 
 .quick-filters {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 6px;
   margin-bottom: 12px;
+  scrollbar-width: thin;
 }
 
 .quick-filter {
@@ -344,6 +372,7 @@ textarea {
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .quick-filter.active {
@@ -409,6 +438,13 @@ textarea {
   align-items: flex-start;
 }
 
+.top-badges {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .badge {
   border-radius: 999px;
   padding: 5px 10px;
@@ -434,6 +470,10 @@ textarea {
 
 .badge.upcoming {
   background: #5348e4;
+}
+
+.badge.nearest {
+  background: #3b356f;
 }
 
 .meeting-duration,
@@ -467,6 +507,17 @@ textarea {
   border-color: #ff9f43;
   color: #7f3d00;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+.in-progress-badge {
+  margin-left: 6px;
+  background: #ff4f66;
+  color: #fff;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .providers-row {
@@ -562,6 +613,16 @@ textarea {
 .meeting-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.post-meeting-box {
+  border: 1px dashed #bdb8d8;
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  background: #ffffff85;
 }
 
 .pagination {
@@ -657,6 +718,12 @@ textarea {
 .created-item .name {
   flex: 1;
   font-size: 13px;
+  display: grid;
+}
+
+.created-item .name small {
+  font-size: 11px;
+  color: #6e6b87;
 }
 
 .btn-xs {
@@ -765,11 +832,51 @@ textarea {
 }
 
 .upload-spinner {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   color: #4f4b7b;
   font-size: 13px;
+  width: 100%;
+  text-align: center;
+}
+
+.next-meeting-counter {
+  margin-left: 10px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.quick-filters-fade {
+  display: none;
+}
+
+.swal-ios {
+  border-radius: 24px !important;
+  box-shadow: 0 16px 60px rgba(23, 22, 36, 0.22) !important;
+}
+
+.swal-ios .swal2-title {
+  font-size: 22px !important;
+}
+
+.swal-ios-btn {
+  border-radius: 999px !important;
+  padding: 10px 18px !important;
+}
+
+.swal-ios-btn-cancel {
+  color: #272538 !important;
 }
 
 @media (max-width: 1080px) {
@@ -793,5 +900,24 @@ textarea {
 
   .grid-form {
     grid-template-columns: 1fr;
+  }
+
+  .quick-filters-wrap {
+    overflow: hidden;
+  }
+
+  .quick-filters-fade {
+    display: block;
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 12px;
+    width: 44px;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.95) 100%);
+  }
+
+  .next-meeting-counter {
+    display: none;
   }
 }

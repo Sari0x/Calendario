@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Calendario de Reuniones</title>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Calendar NovoHub" />
+    <link
+      rel="apple-touch-icon"
+      href="https://firebasestorage.googleapis.com/v0/b/tienditax.firebasestorage.app/o/Calendario%20IOS.png?alt=media&token=81179d97-279f-4ef7-be40-9f7aaae70b73"
+    />
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23007aff'/%3E%3Cpath d='M18 16h28v30H18z' fill='white'/%3E%3Cpath d='M18 24h28' stroke='%23007aff' stroke-width='4'/%3E%3C/svg%3E"
@@ -19,6 +26,7 @@
     <header class="topbar glass">
       <div class="brand-wrap">
         <img src="img/Novo%20Hub%20Logo.png" alt="Novo Hub" class="brand-logo" />
+        <div id="nextMeetingCounter" class="next-meeting-counter hidden"></div>
       </div>
 
       <div class="menu-actions">
@@ -57,17 +65,26 @@
           <h2><i class="bi bi-kanban"></i> Reuniones</h2>
           <div class="filter">
             <input id="filterDate" type="text" placeholder="Filtrar por fecha" />
+            <select id="filterProvider">
+              <option value="">Proveedor</option>
+            </select>
+            <select id="filterParticipant">
+              <option value="">Participante</option>
+            </select>
             <button id="clearFilter" class="btn btn-pill btn-ghost"><i class="bi bi-eraser"></i> Limpiar</button>
           </div>
         </div>
 
-        <div class="quick-filters" id="quickFilters">
-          <button class="quick-filter active" data-filter="all"><i class="bi bi-grid"></i> Todas</button>
-          <button class="quick-filter" data-filter="in_progress"><i class="bi bi-play-circle"></i> En curso</button>
-          <button class="quick-filter" data-filter="today"><i class="bi bi-sun"></i> Hoy</button>
-          <button class="quick-filter" data-filter="week"><i class="bi bi-calendar-week"></i> Esta semana</button>
-          <button class="quick-filter" data-filter="next_week"><i class="bi bi-calendar2-week"></i> Próxima semana</button>
-          <button class="quick-filter" data-filter="finished"><i class="bi bi-check2-circle"></i> Finalizadas</button>
+        <div class="quick-filters-wrap">
+          <div class="quick-filters" id="quickFilters">
+            <button class="quick-filter active" data-filter="all"><i class="bi bi-grid"></i> Todas</button>
+            <button class="quick-filter" data-filter="in_progress"><i class="bi bi-play-circle"></i> En curso <span id="inProgressBadge" class="in-progress-badge hidden"></span></button>
+            <button class="quick-filter" data-filter="today"><i class="bi bi-sun"></i> Hoy</button>
+            <button class="quick-filter" data-filter="week"><i class="bi bi-calendar-week"></i> Esta semana</button>
+            <button class="quick-filter" data-filter="next_week"><i class="bi bi-calendar2-week"></i> Próxima semana</button>
+            <button class="quick-filter" data-filter="finished"><i class="bi bi-check2-circle"></i> Finalizadas</button>
+          </div>
+          <div class="quick-filters-fade"></div>
         </div>
 
         <div id="spinner" class="spinner-wrap hidden"><div class="spinner"></div></div>

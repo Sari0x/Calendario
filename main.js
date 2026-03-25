@@ -27,7 +27,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const rtdb = getDatabase(app);
 const storage = getStorage(app);
-const pageSize = 6;
+const pageSize = 9;
 
 const $ = (id) => document.getElementById(id);
 const spinner = $('spinner');
@@ -43,11 +43,14 @@ let countdownInterval = null;
 let currentPage = 1;
 let totalPages = 1;
 let activeFilterDate = null;
+let activeFilterProvider = '';
+let activeFilterParticipant = '';
 let activeQuickFilter = 'all';
 let editingMeetingId = null;
 let editingProviderId = null;
 let editingParticipantId = null;
 let nearestMeetingId = null;
+let uiTickerInterval = null;
 
 const pickerUiState = {
   provider: { query: '', open: false },
@@ -62,6 +65,18 @@ const providerIcons = {
 };
 
 const esFmt = new Intl.DateTimeFormat('es-ES', { dateStyle: 'full', timeStyle: 'short' });
+
+const IOSSwal = Swal.mixin({
+  background: '#f8f7ff',
+  color: '#1e1e2a',
+  confirmButtonColor: '#5f5bff',
+  cancelButtonColor: '#d4d3e6',
+  customClass: {
+    popup: 'swal-ios',
+    confirmButton: 'swal-ios-btn',
+    cancelButton: 'swal-ios-btn swal-ios-btn-cancel',
+  },
+});
 
 function showSpinner(show) {
   spinner.classList.toggle('hidden', !show);
@@ -138,6 +153,15 @@ function countdownLabel(startAt) {
   if (days > 0) return `Faltan ${days}d ${hours}h ${minutes}m`;
   if (hours > 0) return `Faltan ${hours}h ${minutes}m`;
   return `Faltan ${minutes}m`;
+}
+
+function elapsedLabel(startAt) {
+  const now = Date.now();
+  const start = new Date(startAt).getTime();
+  const diffMin = Math.max(Math.floor((now - start) / 60000), 0);
+  const hours = Math.floor(diffMin / 60);
+  const minutes = diffMin % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 function normalizeSnapshot(snapshotVal) {
@@ -253,7 +277,7 @@ function renderCreatedLists() {
     ? participants
         .map(
           (p) =>
-            `<div class="created-item"><span class="avatar" style="background:${p.color}">${p.initials}</span><span class="name">${p.name} ${p.lastName}</span><button class="btn btn-ghost btn-xs" data-edit-participant="${p.id}">Editar</button><button class="btn btn-ghost btn-xs" data-delete-participant="${p.id}">Eliminar</button></div>`,
+            `<div class="created-item"><span class="avatar" style="background:${p.color}">${p.initials}</span><span class="name"><strong>${p.name} ${p.lastName}</strong><small>${p.email || ''}</small></span><button class="btn btn-ghost btn-xs" data-edit-participant="${p.id}">Editar</button><button class="btn btn-ghost btn-xs" data-delete-participant="${p.id}">Eliminar</button></div>`,
         )
         .join('')
     : '<small>Sin participantes creados.</small>';
@@ -324,7 +348,10 @@ function meetingCard(meeting) {
     .map((p) => `<img class="provider-thumb" src="${p.image}" alt="${p.name}" title="${p.name}" />`)
     .join('');
   const participantList = (meeting.participants || [])
-    .map((p) => `<span class="participant-pill"><span class="participant-initials">${p.initials || initials(p.name, p.lastName)}</span><span>${p.name} ${p.lastName}</span></span>`)
+    .map(
+      (p) =>
+        `<span class="participant-pill"><span class="participant-initials" style="background:${p.color || randomColor(`${p.name}${p.lastName}${p.email || ''}`)}">${p.initials || initials(p.name, p.lastName)}</span><span>${p.name} ${p.lastName}</span></span>`,
+    )
     .join('');
 
   const linkType = parseLinkType(meeting.link);
@@ -341,7 +368,10 @@ function meetingCard(meeting) {
   return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''} ${isNearest ? 'is-nearest' : ''}">
     <div class="meeting-top">
       <strong><i class="bi bi-clock-history"></i> ${esFmt.format(new Date(meeting.startAt))}</strong>
-      <span class="badge ${meta.cls}"><i class="bi ${meta.icon}"></i> ${meta.text}</span>
+      <div class="top-badges">
+        ${isNearest ? '<span class="badge nearest"><i class="bi bi-stars"></i> Próximo meet</span>' : ''}
+        <span class="badge ${meta.cls}"><i class="bi ${meta.icon}"></i> ${meta.text}</span>
+      </div>
     </div>
 
     <div class="meeting-duration"><i class="bi bi-hourglass-split"></i> Duración: <strong>${meeting.duration || 60} min</strong></div>
@@ -361,9 +391,23 @@ function meetingCard(meeting) {
 
     <div class="meeting-actions">
       ${isFinished ? `<button class="btn btn-pill btn-soft" data-reschedule="${meeting.id}"><i class="bi bi-arrow-repeat"></i> Reprogramar</button>` : ''}
+      ${status === 'in_progress' ? `<button class="btn btn-pill btn-soft" data-finish-now="${meeting.id}"><i class="bi bi-stop-circle"></i> Finalizar ahora</button>` : ''}
       <button class="btn btn-pill btn-ghost" data-edit="${meeting.id}"><i class="bi bi-pencil-square"></i></button>
       ${!isFinished ? `<button class="btn btn-pill btn-ghost" data-delete="${meeting.id}"><i class="bi bi-trash3"></i></button>` : ''}
     </div>
+    ${
+      isFinished
+        ? `<div class="post-meeting-box">
+            <label>Link de grabación
+              <input type="url" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
+            </label>
+            <label>Comentario post reunión
+              <textarea rows="2" data-post-comment="${meeting.id}" placeholder="Notas finales...">${meeting.postComment || ''}</textarea>
+            </label>
+            <button class="btn btn-pill btn-soft" data-save-post="${meeting.id}"><i class="bi bi-save2"></i> Guardar post reunión</button>
+          </div>`
+        : ''
+    }
   </article>`;
 }
 
@@ -420,6 +464,8 @@ function renderCurrentPage() {
   $('prevPage').disabled = currentPage === 1;
   $('nextPage').disabled = currentPage >= totalPages;
   startCountdowns();
+  updateTopIndicators();
+  startUiTicker();
 }
 
 function startCountdowns() {
@@ -436,9 +482,55 @@ function startCountdowns() {
   countdownInterval = window.setInterval(updateCountdowns, 60000);
 }
 
+function renderFilterOptions() {
+  $('filterProvider').innerHTML = `<option value="">Proveedor</option>${providers
+    .map((p) => `<option value="${p.id}">${p.name}</option>`)
+    .join('')}`;
+  $('filterParticipant').innerHTML = `<option value="">Participante</option>${participants
+    .map((p) => `<option value="${p.id}">${p.name} ${p.lastName}</option>`)
+    .join('')}`;
+  $('filterProvider').value = activeFilterProvider;
+  $('filterParticipant').value = activeFilterParticipant;
+}
+
+function updateTopIndicators() {
+  const now = Date.now();
+  const activeInProgress = filteredMeetings.filter((m) => meetingStatus(m) === 'in_progress');
+  const inProgressBadge = $('inProgressBadge');
+  if (activeInProgress.length === 1) {
+    inProgressBadge.textContent = elapsedLabel(activeInProgress[0].startAt);
+    inProgressBadge.classList.remove('hidden');
+  } else if (activeInProgress.length > 1) {
+    inProgressBadge.textContent = `${activeInProgress.length} en curso`;
+    inProgressBadge.classList.remove('hidden');
+  } else {
+    inProgressBadge.classList.add('hidden');
+  }
+
+  const nextMeeting = filteredMeetings
+    .filter((m) => new Date(m.startAt).getTime() > now)
+    .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
+  const counter = $('nextMeetingCounter');
+  if (!nextMeeting) {
+    counter.classList.add('hidden');
+    counter.textContent = '';
+    return;
+  }
+  counter.classList.remove('hidden');
+  counter.innerHTML = `<i class="bi bi-alarm"></i> Próxima reunión en ${countdownLabel(nextMeeting.startAt)}`;
+}
+
+function startUiTicker() {
+  if (uiTickerInterval) window.clearInterval(uiTickerInterval);
+  const tick = () => updateTopIndicators();
+  tick();
+  uiTickerInterval = window.setInterval(tick, 60000);
+}
+
 async function loadReferences() {
   providers = await loadCollection('providers');
   participants = await loadCollection('participants');
+  renderFilterOptions();
   renderPickers();
 }
 
@@ -452,6 +544,13 @@ async function fetchMeetings() {
       rows = normalizeSnapshot(snap.val());
     } else {
       rows = await loadCollection('meetings');
+    }
+
+    if (activeFilterProvider) {
+      rows = rows.filter((row) => (row.providers || []).some((p) => p.id === activeFilterProvider));
+    }
+    if (activeFilterParticipant) {
+      rows = rows.filter((row) => (row.participants || []).some((p) => p.id === activeFilterParticipant));
     }
 
     filteredMeetings = sortMeetings(applyQuickFilter(rows));
@@ -487,7 +586,7 @@ async function onSaveProvider(e) {
   }
 
   if (!image) {
-    await Swal.fire({
+    await IOSSwal.fire({
       icon: 'info',
       title: 'Falta imagen',
       text: 'Podés pegar una URL o subir un archivo.',
@@ -565,7 +664,7 @@ function hasMeetingDraft() {
 }
 
 async function confirmDiscardDraft() {
-  const result = await Swal.fire({
+  const result = await IOSSwal.fire({
     icon: 'warning',
     title: '¿Cancelar creación del evento?',
     text: 'Se perderán los cambios cargados en este formulario.',
@@ -575,6 +674,23 @@ async function confirmDiscardDraft() {
     cancelButtonText: 'Continuar editando',
   });
   return result.isConfirmed;
+}
+
+function formatOverlapDetails(row) {
+  const start = new Date(row.startAt);
+  const end = new Date(start.getTime() + (row.duration || 60) * 60000);
+  return `• ${esFmt.format(start)} → ${esFmt.format(end)} ${row.note ? `(${row.note})` : ''}`;
+}
+
+function getOverlappingMeetings(startAt, duration, ignoreId = null) {
+  const nextStart = startAt.getTime();
+  const nextEnd = nextStart + duration * 60000;
+  return filteredMeetings.filter((row) => {
+    if (ignoreId && row.id === ignoreId) return false;
+    const rowStart = new Date(row.startAt).getTime();
+    const rowEnd = rowStart + (row.duration || 60) * 60000;
+    return nextStart < rowEnd && rowStart < nextEnd;
+  });
 }
 
 async function onSaveMeeting() {
@@ -599,7 +715,21 @@ async function onSaveMeeting() {
       .map(({ id, name, lastName, email, initials: ini, color }) => ({ id, name, lastName, email, initials: ini, color })),
   };
 
-  const confirmation = await Swal.fire({
+  const overlaps = getOverlappingMeetings(startAt, payload.duration, editingMeetingId);
+  if (overlaps.length) {
+    const detail = overlaps.slice(0, 3).map(formatOverlapDetails).join('\n');
+    const overlapConfirm = await IOSSwal.fire({
+      icon: 'warning',
+      title: 'Se superpone con otra reunión',
+      text: `Detecté ${overlaps.length} superposición(es).\n${detail}\n¿Deseás continuar igual?`,
+      showCancelButton: true,
+      confirmButtonText: 'Sí, continuar',
+      cancelButtonText: 'No, revisar',
+    });
+    if (!overlapConfirm.isConfirmed) return;
+  }
+
+  const confirmation = await IOSSwal.fire({
     icon: 'question',
     title: editingMeetingId ? '¿Guardar cambios de la reunión?' : '¿Cargar nuevo evento?',
     text: 'Confirmá para guardar o cancelá para cerrar el editor sin guardar.',
@@ -646,7 +776,7 @@ async function deleteMeeting(id) {
   const row = filteredMeetings.find((m) => m.id === id);
   if (!row) return;
   if (meetingStatus(row) === 'finished') return;
-  const result = await Swal.fire({
+  const result = await IOSSwal.fire({
     icon: 'warning',
     title: '¿Eliminar reunión activa?',
     text: 'Esta acción quita la reunión del calendario.',
@@ -674,8 +804,39 @@ async function rescheduleMeeting(id) {
   await fetchMeetings();
 }
 
+async function finishMeetingNow(id) {
+  const row = filteredMeetings.find((m) => m.id === id);
+  if (!row) return;
+  const now = new Date();
+  const start = new Date(row.startAt);
+  const elapsedMin = Math.max(Math.ceil((now - start) / 60000), 1);
+  const result = await IOSSwal.fire({
+    icon: 'question',
+    title: '¿Finalizar reunión ahora?',
+    text: `Duración efectiva: ${elapsedMin} min.`,
+    showCancelButton: true,
+    confirmButtonText: 'Sí, finalizar',
+    cancelButtonText: 'Cancelar',
+  });
+  if (!result.isConfirmed) return;
+  await update(ref(rtdb, `meetings/${id}`), { duration: elapsedMin, updatedAt: new Date().toISOString() });
+  await fetchMeetings();
+}
+
+async function savePostMeeting(id) {
+  const linkInput = document.querySelector(`[data-recording-link="${id}"]`);
+  const commentInput = document.querySelector(`[data-post-comment="${id}"]`);
+  if (!linkInput || !commentInput) return;
+  await update(ref(rtdb, `meetings/${id}`), {
+    recordingLink: linkInput.value.trim(),
+    postComment: commentInput.value.trim(),
+    updatedAt: new Date().toISOString(),
+  });
+  await IOSSwal.fire({ icon: 'success', title: 'Guardado', timer: 1100, showConfirmButton: false });
+}
+
 async function deleteProvider(id) {
-  const result = await Swal.fire({
+  const result = await IOSSwal.fire({
     title: '¿Estas seguro?',
     text: 'Se eliminará el proveedor.',
     icon: 'warning',
@@ -689,7 +850,7 @@ async function deleteProvider(id) {
 }
 
 async function deleteParticipant(id) {
-  const result = await Swal.fire({
+  const result = await IOSSwal.fire({
     title: '¿Estas seguro?',
     text: 'Se eliminará el participante.',
     icon: 'warning',
@@ -712,9 +873,9 @@ function buildMeetingSummary(meeting) {
 async function copyToClipboard(content, okMessage) {
   try {
     await navigator.clipboard.writeText(content);
-    await Swal.fire({ icon: 'success', title: 'Copiado', text: okMessage, timer: 1300, showConfirmButton: false });
+    await IOSSwal.fire({ icon: 'success', title: 'Copiado', text: okMessage, timer: 1300, showConfirmButton: false });
   } catch (error) {
-    await Swal.fire({ icon: 'error', title: 'No se pudo copiar', text: 'Revisá permisos del navegador.' });
+    await IOSSwal.fire({ icon: 'error', title: 'No se pudo copiar', text: 'Revisá permisos del navegador.' });
   }
 }
 
@@ -837,6 +998,20 @@ function bindEvents() {
   $('clearFilter').addEventListener('click', async () => {
     $('filterDate')._flatpickr?.clear();
     activeFilterDate = null;
+    activeFilterProvider = '';
+    activeFilterParticipant = '';
+    $('filterProvider').value = '';
+    $('filterParticipant').value = '';
+    currentPage = 1;
+    await fetchMeetings();
+  });
+  $('filterProvider').addEventListener('change', async (e) => {
+    activeFilterProvider = e.target.value;
+    currentPage = 1;
+    await fetchMeetings();
+  });
+  $('filterParticipant').addEventListener('change', async (e) => {
+    activeFilterParticipant = e.target.value;
     currentPage = 1;
     await fetchMeetings();
   });
@@ -866,9 +1041,12 @@ function bindEvents() {
     const idRes = e.target.closest('[data-reschedule]')?.dataset?.reschedule;
     const idEdit = e.target.closest('[data-edit]')?.dataset?.edit;
     const idDelete = e.target.closest('[data-delete]')?.dataset?.delete;
+    const idFinish = e.target.closest('[data-finish-now]')?.dataset?.finishNow;
     const idCopyLink = e.target.closest('[data-copy-link]')?.dataset?.copyLink;
     const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
+    const idSavePost = e.target.closest('[data-save-post]')?.dataset?.savePost;
     if (idRes) await rescheduleMeeting(idRes);
+    if (idFinish) await finishMeetingNow(idFinish);
     if (idEdit) {
       loadMeetingToForm(idEdit);
       scrollToMeetingForm();
@@ -882,6 +1060,7 @@ function bindEvents() {
       const row = filteredMeetings.find((m) => m.id === idCopySummary);
       if (row) await copyToClipboard(buildMeetingSummary(row), 'Resumen copiado para compartir por WhatsApp.');
     }
+    if (idSavePost) await savePostMeeting(idSavePost);
   });
 }
 

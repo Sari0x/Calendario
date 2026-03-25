@@ -319,7 +319,7 @@ function meetingCard(meeting) {
     .map((p) => `<img class="provider-thumb" src="${p.image}" alt="${p.name}" title="${p.name}" />`)
     .join('');
   const participantList = (meeting.participants || [])
-    .map((p) => `<li><i class="bi bi-person-circle"></i><span>${p.name} ${p.lastName}</span></li>`)
+    .map((p) => `<span class="participant-pill"><span class="participant-initials">${p.initials || initials(p.name, p.lastName)}</span><span>${p.name} ${p.lastName}</span></span>`)
     .join('');
 
   const linkType = parseLinkType(meeting.link);
@@ -339,7 +339,7 @@ function meetingCard(meeting) {
 
     <div class="providers-row">${providerList || '<em>Sin proveedores</em>'}</div>
 
-    <ul class="participants-list">${participantList || '<li><i class="bi bi-person-x"></i><span>Sin participantes</span></li>'}</ul>
+    <div class="participants-list">${participantList || '<span class="participant-empty"><i class="bi bi-person-x"></i> Sin participantes</span>'}</div>
 
     <div class="link-actions">
       ${meeting.link ? `<a class="meeting-link" href="${meeting.link}" target="_blank" rel="noreferrer">${linkIcon}<span>Abrir reunión</span></a>` : '<span class="meeting-link muted"><i class="bi bi-link-45deg"></i> Sin link</span>'}
@@ -517,6 +517,31 @@ function resetMeetingForm({ keepOpen = false } = {}) {
   $('saveMeeting').innerHTML = '<i class="bi bi-floppy"></i> Cargar evento';
   if (!keepOpen) $('meetingFormSection').classList.add('collapsed');
   renderPickers();
+}
+
+function hasMeetingDraft() {
+  return Boolean(
+    $('meetingDate').value ||
+      $('meetingTime').value ||
+      $('meetingNote').value.trim() ||
+      $('meetingLink').value.trim() ||
+      Number($('meetingDuration').value || 60) !== 60 ||
+      getSelectedIds('provider').size ||
+      getSelectedIds('participant').size,
+  );
+}
+
+async function confirmDiscardDraft() {
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: '¿Cancelar creación del evento?',
+    text: 'Se perderán los cambios cargados en este formulario.',
+    footer: 'Confirmá solo si querés eliminar el borrador.',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, descartar',
+    cancelButtonText: 'Continuar editando',
+  });
+  return result.isConfirmed;
 }
 
 async function onSaveMeeting() {
@@ -714,10 +739,18 @@ function bindPickerEvents(type) {
 }
 
 function bindEvents() {
-  $('openMeetingForm').addEventListener('click', () => {
-    scrollToMeetingForm();
+  $('openMeetingForm').addEventListener('click', async () => {
+    const isCollapsed = $('meetingFormSection').classList.contains('collapsed');
+    if (isCollapsed) {
+      scrollToMeetingForm();
+      return;
+    }
+    if (hasMeetingDraft()) {
+      const shouldDiscard = await confirmDiscardDraft();
+      if (!shouldDiscard) return;
+    }
+    resetMeetingForm();
   });
-  $('saveMeetingFloating').addEventListener('click', onSaveMeeting);
   $('openProvidersModal').addEventListener('click', () => openProviderModal());
   $('openParticipantsModal').addEventListener('click', () => openParticipantModal());
 

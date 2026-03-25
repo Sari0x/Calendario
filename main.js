@@ -119,7 +119,7 @@ function buildMultiPicker(items, selectedIds, type) {
           ? `<img src="${item.image}" class="provider-img" alt="${item.name}" />`
           : `<span class="avatar" style="background:${item.color}">${item.initials}</span>`;
       const label = type === 'provider' ? item.name : `${item.name} ${item.lastName}`;
-      return `<label class="option-chip">${visual}<input type="checkbox" data-${type}="${item.id}" ${checked}/><span class="chip-text">${label}</span></label>`;
+      return `<label class="option-chip">${visual}<span class="chip-text">${label}</span><input type="checkbox" data-${type}="${item.id}" ${checked}/></label>`;
     })
     .join('');
 }

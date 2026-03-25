@@ -157,8 +157,8 @@ textarea {
   padding: 8px;
   min-height: 52px;
   display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   background: #fff;
 }
@@ -169,23 +169,23 @@ textarea {
   padding: 4px 10px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: flex-start;
+  gap: 8px;
   font-size: 13px;
   background: #f8f8fb;
-  max-width: 100%;
+  width: 100%;
   min-width: 0;
 }
 
 .option-chip input {
-  margin: 0;
-  order: -1;
+  margin-left: auto;
 }
 
 .option-chip .chip-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 160px;
+  flex: 1;
 }
 
 .avatar,
@@ -229,7 +229,12 @@ textarea {
 .providers {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+}
+
+.participants,
+.providers {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .badge {

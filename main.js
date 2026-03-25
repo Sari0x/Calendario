@@ -1,20 +1,21 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import {
+  equalTo,
   get,
   getDatabase,
+  limitToFirst,
+  orderByChild,
   push,
   query,
   ref,
   set,
   update,
-  orderByChild,
-  equalTo,
-  limitToFirst,
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBBaOij5CcHOtPSkiA56dOJnPmVlovimtY',
   authDomain: 'calendario-83eab.firebaseapp.com',
+  databaseURL: 'https://calendario-83eab-default-rtdb.firebaseio.com/',
   projectId: 'calendario-83eab',
   storageBucket: 'calendario-83eab.firebasestorage.app',
   messagingSenderId: '370342529436',
@@ -37,13 +38,6 @@ let meetings = [];
 let currentPage = 1;
 let totalPages = 1;
 let activeFilterDate = null;
-let storageMode = 'rtdb';
-
-const localKeys = {
-  providers: 'calendario.providers.v1',
-  participants: 'calendario.participants.v1',
-  meetings: 'calendario.meetings.v1',
-};
 
 const providerIcons = {
   meet: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/Google_Meet_icon_%282020%29.svg/960px-Google_Meet_icon_%282020%29.svg.png',
@@ -53,11 +47,10 @@ const providerIcons = {
 };
 
 const esFmt = new Intl.DateTimeFormat('es-ES', { dateStyle: 'full', timeStyle: 'short' });
-const uid = () => (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
-const readLocal = (name) => JSON.parse(localStorage.getItem(localKeys[name]) || '[]');
-const writeLocal = (name, data) => localStorage.setItem(localKeys[name], JSON.stringify(data));
-const showSpinner = (show) => spinner.classList.toggle('hidden', !show);
+function showSpinner(show) {
+  spinner.classList.toggle('hidden', !show);
+}
 
 function showNotice(message) {
   appNotice.textContent = message;
@@ -100,27 +93,18 @@ function normalizeSnapshot(snapshotVal = {}) {
 async function verifyRTDBAccess() {
   try {
     await get(query(ref(rtdb, 'meetings'), limitToFirst(1)));
-    storageMode = 'rtdb';
   } catch (error) {
-    storageMode = 'local';
-    showNotice('No se pudo usar Realtime Database (reglas/permisos). Se activó modo local.');
-    console.error('RTDB error, fallback local:', error);
+    showNotice('No se pudo conectar con Realtime Database. Revisá databaseURL y reglas.');
+    throw error;
   }
 }
 
 async function loadCollection(name) {
-  if (storageMode === 'local') return readLocal(name);
   const snap = await get(ref(rtdb, name));
   return normalizeSnapshot(snap.val());
 }
 
 async function saveCollectionItem(name, data) {
-  if (storageMode === 'local') {
-    const current = readLocal(name);
-    current.push({ id: uid(), ...data, createdAt: new Date().toISOString() });
-    writeLocal(name, current);
-    return;
-  }
   await set(push(ref(rtdb, name)), { ...data, createdAt: new Date().toISOString() });
 }
 
@@ -192,27 +176,16 @@ function paginateRows(rows) {
 }
 
 async function loadReferences() {
-  try {
-    providers = await loadCollection('providers');
-    participants = await loadCollection('participants');
-    renderPickers();
-  } catch (error) {
-    storageMode = 'local';
-    showNotice('Fallo de conexión con Realtime Database. Se activa localStorage.');
-    providers = readLocal('providers');
-    participants = readLocal('participants');
-    renderPickers();
-    console.error(error);
-  }
+  providers = await loadCollection('providers');
+  participants = await loadCollection('participants');
+  renderPickers();
 }
 
 async function fetchMeetings() {
   showSpinner(true);
   try {
     let rows = [];
-    if (storageMode === 'local') {
-      rows = readLocal('meetings');
-    } else if (activeFilterDate) {
+    if (activeFilterDate) {
       const snap = await get(query(ref(rtdb, 'meetings'), orderByChild('dateKey'), equalTo(activeFilterDate)));
       rows = normalizeSnapshot(snap.val());
     } else {
@@ -220,7 +193,6 @@ async function fetchMeetings() {
     }
 
     rows.sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
-    if (activeFilterDate) rows = rows.filter((m) => m.dateKey === activeFilterDate);
     meetings = paginateRows(rows);
 
     meetingsList.innerHTML = meetings.length ? meetings.map(meetingCard).join('') : '<p>No hay reuniones.</p>';
@@ -228,7 +200,7 @@ async function fetchMeetings() {
     $('prevPage').disabled = currentPage === 1;
     $('nextPage').disabled = currentPage >= totalPages;
   } catch (error) {
-    showNotice('No se pudieron cargar reuniones.');
+    showNotice('No se pudieron cargar reuniones desde Realtime Database.');
     meetingsList.innerHTML = '<p>No se pudieron cargar reuniones.</p>';
     console.error(error);
   } finally {
@@ -310,18 +282,11 @@ async function rescheduleMeeting(id) {
   const next = new Date(row.startAt);
   next.setDate(next.getDate() + 1);
 
-  if (storageMode === 'local') {
-    const updated = readLocal('meetings').map((m) =>
-      m.id === id ? { ...m, startAt: next.toISOString(), dateKey: next.toISOString().slice(0, 10) } : m,
-    );
-    writeLocal('meetings', updated);
-  } else {
-    await update(ref(rtdb, `meetings/${id}`), {
-      startAt: next.toISOString(),
-      dateKey: next.toISOString().slice(0, 10),
-      updatedAt: new Date().toISOString(),
-    });
-  }
+  await update(ref(rtdb, `meetings/${id}`), {
+    startAt: next.toISOString(),
+    dateKey: next.toISOString().slice(0, 10),
+    updatedAt: new Date().toISOString(),
+  });
 
   await fetchMeetings();
 }

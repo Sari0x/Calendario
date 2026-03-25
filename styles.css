@@ -356,23 +356,26 @@ textarea {
 
 .quick-filters-wrap {
   position: relative;
+  width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
 }
 
 .quick-filters {
   display: flex;
   gap: 8px;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  min-width: 0;
   padding-bottom: 6px;
   margin-bottom: 12px;
   scrollbar-width: thin;
 }
 
 .quick-filter {
+  flex: 0 0 auto;
   border: 1px solid var(--border);
   background: #fff;
   color: var(--muted);

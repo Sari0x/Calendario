@@ -53,6 +53,8 @@ let nearestMeetingId = null;
 let uiTickerInterval = null;
 const pendingFinishMeetingIds = new Set();
 const expandedPostMeetingIds = new Set();
+let baseMeetings = [];
+let dateMeetCounts = {};
 
 const pickerUiState = {
   provider: { query: '', open: false },
@@ -171,6 +173,22 @@ function countdownCompactLabel(startAt) {
   if (days > 0) return `${days}d ${hours}h ${minutes}m`;
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+}
+
+function elapsedLabel(startAt) {
+  const now = Date.now();
+  const start = new Date(startAt).getTime();
+  const diffMin = Math.max(Math.floor((now - start) / 60000), 0);
+  const hours = Math.floor(diffMin / 60);
+  const minutes = diffMin % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function toDateKeyLocal(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function normalizeSnapshot(snapshotVal) {
@@ -409,7 +427,7 @@ function meetingCard(meeting) {
             }</button>`
           : ''
       }
-      <button class="btn btn-ghost btn-action" data-edit="${meeting.id}"><i class="bi bi-pencil-square"></i></button>
+      ${!isFinished ? `<button class="btn btn-ghost btn-action" data-edit="${meeting.id}"><i class="bi bi-pencil-square"></i></button>` : ''}
       ${!isFinished ? `<button class="btn btn-ghost btn-action" data-delete="${meeting.id}"><i class="bi bi-trash3"></i></button>` : ''}
     </div>
     ${
@@ -550,6 +568,19 @@ function renderFilterOptions() {
 
 function updateTopIndicators() {
   const now = Date.now();
+  const activeInProgress = baseMeetings.filter((m) => meetingStatus(m) === 'in_progress');
+  const inProgressBadge = $('inProgressBadge');
+  if (activeInProgress.length === 1) {
+    inProgressBadge.textContent = elapsedLabel(activeInProgress[0].startAt);
+    inProgressBadge.classList.remove('hidden');
+  } else if (activeInProgress.length > 1) {
+    inProgressBadge.textContent = `${activeInProgress.length} reuniones en curso`;
+    inProgressBadge.classList.remove('hidden');
+  } else {
+    inProgressBadge.classList.add('hidden');
+    inProgressBadge.textContent = '';
+  }
+
   const nextMeeting = filteredMeetings
     .filter((m) => new Date(m.startAt).getTime() > now)
     .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
@@ -612,6 +643,8 @@ async function fetchMeetings() {
       rows = rows.filter((row) => (row.participants || []).some((p) => p.id === activeFilterParticipant));
     }
 
+    await refreshDateMeetCounts();
+    baseMeetings = [...rows];
     updateQuickFilterCounts(rows);
     filteredMeetings = sortMeetings(applyQuickFilter(rows));
     renderCurrentPage();
@@ -623,6 +656,16 @@ async function fetchMeetings() {
     showSpinner(false);
     setNextMeetingCounterLoading(false);
   }
+}
+
+async function refreshDateMeetCounts() {
+  const rows = await loadCollection('meetings');
+  dateMeetCounts = rows.reduce((acc, row) => {
+    const key = row.dateKey || toDateKeyLocal(new Date(row.startAt));
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  $('filterDate')._flatpickr?.redraw();
 }
 
 async function onSaveProvider(e) {
@@ -1148,6 +1191,15 @@ function setupFlatpickr() {
       currentPage = 1;
       await fetchMeetings();
     },
+    onDayCreate: (_, __, ___, dayElem) => {
+      const dateKey = toDateKeyLocal(dayElem.dateObj);
+      const count = dateMeetCounts[dateKey] || 0;
+      if (!count) return;
+      const badge = document.createElement('span');
+      badge.className = 'day-meet-count';
+      badge.textContent = String(count);
+      dayElem.appendChild(badge);
+    },
   });
 }
 
@@ -1158,5 +1210,6 @@ function setupFlatpickr() {
   bindEvents();
   await verifyRTDBAccess();
   await loadReferences();
+  await refreshDateMeetCounts();
   await fetchMeetings();
 })();

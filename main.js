@@ -32,6 +32,7 @@ const spinner = $('spinner');
 const meetingsList = $('meetingsList');
 const pageInfo = $('pageInfo');
 const appNotice = $('appNotice');
+const headerActionButtons = Array.from(document.querySelectorAll('.menu-actions button'));
 
 let providers = [];
 let participants = [];
@@ -45,6 +46,7 @@ let activeFilterProvider = '';
 let activeFilterParticipant = '';
 let activeQuickFilter = 'upcoming';
 let editingMeetingId = null;
+let editingMeetingOriginalStartAt = null;
 let editingProviderId = null;
 let editingParticipantId = null;
 let nearestMeetingId = null;
@@ -55,6 +57,8 @@ const expandedPostMeetingIds =
 globalThis.__expandedPostMeetingIds = expandedPostMeetingIds;
 let baseMeetings = [];
 let dateMeetCounts = {};
+let meetingsCache = [];
+let meetingsCacheLoaded = false;
 const slackSettings = {
   webhookUrl: '',
   appScriptUrl: '',
@@ -101,6 +105,12 @@ function showSpinner(show) {
 function showNotice(message) {
   appNotice.textContent = message;
   appNotice.classList.remove('hidden');
+}
+
+function setHeaderActionsDisabled(disabled) {
+  headerActionButtons.forEach((button) => {
+    button.disabled = disabled;
+  });
 }
 
 function scrollToMeetingForm() {
@@ -229,6 +239,16 @@ async function loadCollection(name) {
   return normalizeSnapshot(snap.val());
 }
 
+async function getMeetingsData({ forceRefresh = false } = {}) {
+  if (!forceRefresh && meetingsCacheLoaded) {
+    return [...meetingsCache];
+  }
+  const rows = await loadCollection('meetings');
+  meetingsCache = rows;
+  meetingsCacheLoaded = true;
+  return [...meetingsCache];
+}
+
 async function saveCollectionItem(name, data) {
   await set(push(ref(rtdb, name)), { ...data, createdAt: new Date().toISOString() });
 }
@@ -306,9 +326,10 @@ function renderPickers() {
   renderCreatedLists();
 }
 
-function loadSlackSettings() {
+async function loadSlackSettings() {
   try {
-    const saved = JSON.parse(localStorage.getItem('slackSettings') || '{}');
+    const snap = await get(ref(rtdb, 'settings/slack'));
+    const saved = snap.val() || {};
     slackSettings.webhookUrl = saved.webhookUrl || '';
     slackSettings.appScriptUrl = saved.appScriptUrl || '';
   } catch (error) {
@@ -321,15 +342,21 @@ function loadSlackSettings() {
   if (appScriptInput) appScriptInput.value = slackSettings.appScriptUrl;
 }
 
-function saveSlackSettings() {
-  localStorage.setItem('slackSettings', JSON.stringify(slackSettings));
+async function saveSlackSettings() {
+  await set(ref(rtdb, 'settings/slack'), {
+    webhookUrl: slackSettings.webhookUrl || '',
+    appScriptUrl: slackSettings.appScriptUrl || '',
+    updatedAt: new Date().toISOString(),
+  });
 }
 
-function buildSlackPayload(meeting) {
+function buildSlackPayload(meeting, options = {}) {
+  const { mode = 'create', previousStartAt = null } = options;
   return {
     webhookUrl: slackSettings.webhookUrl,
-    type: 'create_meeting',
+    type: mode === 'update' ? 'update_meeting' : 'create_meeting',
     reminderMinutes: Number(meeting.slackReminderMinutes || 15),
+    previousStartAt,
     meeting: {
       id: meeting.id || null,
       note: meeting.note || '',
@@ -733,18 +760,20 @@ function startUiTicker() {
 }
 
 async function loadReferences() {
-  providers = await loadCollection('providers');
-  participants = await loadCollection('participants');
+  const [loadedProviders, loadedParticipants] = await Promise.all([loadCollection('providers'), loadCollection('participants')]);
+  providers = loadedProviders;
+  participants = loadedParticipants;
   renderFilterOptions();
   renderPickers();
 }
 
-async function fetchMeetings() {
+async function fetchMeetings({ forceRefresh = false } = {}) {
   showSpinner(true);
   setNextMeetingCounterLoading(true);
   meetingsList.innerHTML = '';
   try {
-    let rows = await loadCollection('meetings');
+    let rows = await getMeetingsData({ forceRefresh });
+    refreshDateMeetCounts(rows);
 
     if (activeFilterDateRange?.start && activeFilterDateRange?.end) {
       rows = rows.filter((row) => {
@@ -760,7 +789,6 @@ async function fetchMeetings() {
       rows = rows.filter((row) => (row.participants || []).some((p) => p.id === activeFilterParticipant));
     }
 
-    await refreshDateMeetCounts();
     baseMeetings = [...rows];
     updateQuickFilterCounts(rows);
     filteredMeetings = sortMeetings(applyQuickFilter(rows));
@@ -782,8 +810,7 @@ async function fetchMeetings() {
   }
 }
 
-async function refreshDateMeetCounts() {
-  const rows = await loadCollection('meetings');
+function refreshDateMeetCounts(rows = meetingsCache) {
   dateMeetCounts = rows.reduce((acc, row) => {
     const key = row.dateKey || toDateKeyLocal(new Date(row.startAt));
     acc[key] = (acc[key] || 0) + 1;
@@ -875,6 +902,7 @@ function resetMeetingForm({ keepOpen = false } = {}) {
   pickerUiState.provider.open = false;
   pickerUiState.participant.open = false;
   editingMeetingId = null;
+  editingMeetingOriginalStartAt = null;
   $('cancelEdit').classList.add('hidden');
   $('saveMeeting').innerHTML = '<i class="bi bi-floppy"></i> Cargar evento';
   if (!keepOpen) $('meetingFormSection').classList.add('collapsed');
@@ -1010,7 +1038,15 @@ async function onSaveMeeting() {
     $('saveMeeting').disabled = true;
     $('saveMeeting').innerHTML = '<span class="spinner mini"></span> Enviando a Slack...';
     try {
-      await notifySlackViaAppScript(buildSlackPayload({ ...payload, id: meetingId }));
+      await notifySlackViaAppScript(
+        buildSlackPayload(
+          { ...payload, id: meetingId },
+          {
+            mode: editingMeetingId ? 'update' : 'create',
+            previousStartAt: editingMeetingOriginalStartAt,
+          },
+        ),
+      );
     } catch (error) {
       console.error(error);
       await IOSSwal.fire({
@@ -1025,7 +1061,7 @@ async function onSaveMeeting() {
   }
 
   resetMeetingForm();
-  await fetchMeetings();
+  await fetchMeetings({ forceRefresh: true });
 }
 
 function loadMeetingToForm(id) {
@@ -1043,6 +1079,7 @@ function loadMeetingToForm(id) {
   setSelectedIds('provider', new Set((row.providers || []).map((p) => p.id)));
   setSelectedIds('participant', new Set((row.participants || []).map((p) => p.id)));
   editingMeetingId = id;
+  editingMeetingOriginalStartAt = row.startAt || null;
   $('cancelEdit').classList.remove('hidden');
   $('saveMeeting').innerHTML = '<i class="bi bi-floppy"></i> Guardar cambios';
   $('meetingFormSection').classList.remove('collapsed');
@@ -1063,7 +1100,7 @@ async function deleteMeeting(id) {
   });
   if (!result.isConfirmed) return;
   await set(ref(rtdb, `meetings/${id}`), null);
-  await fetchMeetings();
+  await fetchMeetings({ forceRefresh: true });
 }
 
 async function rescheduleMeeting(id) {
@@ -1095,7 +1132,7 @@ async function finishMeetingNow(id) {
       finishedAt: now.toISOString(),
       updatedAt: now.toISOString(),
     });
-    await fetchMeetings();
+    await fetchMeetings({ forceRefresh: true });
   } catch (error) {
     console.error(error);
     await IOSSwal.fire({ icon: 'error', title: 'No se pudo finalizar', text: 'Intentá nuevamente.' });
@@ -1241,8 +1278,8 @@ function bindEvents() {
   });
   $('openProvidersModal').addEventListener('click', () => openProviderModal());
   $('openParticipantsModal').addEventListener('click', () => openParticipantModal());
-  $('openSlackConfigModal').addEventListener('click', () => {
-    loadSlackSettings();
+  $('openSlackConfigModal').addEventListener('click', async () => {
+    await loadSlackSettings();
     $('slackConfigModal').showModal();
   });
 
@@ -1274,7 +1311,7 @@ function bindEvents() {
     $('saveSlackConfig').innerHTML = '<span class="spinner mini"></span> Guardando...';
     slackSettings.webhookUrl = webhookUrl;
     slackSettings.appScriptUrl = appScriptUrl;
-    saveSlackSettings();
+    await saveSlackSettings();
     await new Promise((resolve) => setTimeout(resolve, 350));
     $('saveSlackConfig').disabled = false;
     $('saveSlackConfig').textContent = 'Guardar';
@@ -1362,7 +1399,7 @@ function bindEvents() {
 
   meetingsList.addEventListener('click', async (e) => {
     if (e.target.closest('[data-retry-fetch]')) {
-      await fetchMeetings();
+      await fetchMeetings({ forceRefresh: true });
       return;
     }
     const idRes = e.target.closest('[data-reschedule]')?.dataset?.reschedule;
@@ -1450,13 +1487,15 @@ function setupFlatpickr() {
 }
 
 (async function init() {
+  setHeaderActionsDisabled(true);
   showSpinner(true);
   setNextMeetingCounterLoading(true);
-  setupFlatpickr();
-  bindEvents();
-  loadSlackSettings();
-  await verifyRTDBAccess();
-  await loadReferences();
-  await refreshDateMeetCounts();
-  await fetchMeetings();
+  try {
+    setupFlatpickr();
+    bindEvents();
+    await verifyRTDBAccess();
+    await Promise.all([loadSlackSettings(), loadReferences(), fetchMeetings({ forceRefresh: true })]);
+  } finally {
+    setHeaderActionsDisabled(false);
+  }
 })();

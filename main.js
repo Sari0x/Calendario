@@ -61,10 +61,18 @@ const slackSettings = {
   webhookUrl: '',
   appScriptUrl: '',
 };
+const corsProxySettings = {
+  baseUrl: 'https://proxy.cors.sh/',
+  apiKey: 'live_36d58f4c13cb7d838833506e8f6450623bf2605859ac089fa008cfeddd29d8dd',
+};
 
 const pickerUiState = {
   provider: { query: '', open: false },
   participant: { query: '', open: false },
+};
+const selectedPickerIds = {
+  provider: new Set(),
+  participant: new Set(),
 };
 
 const providerIcons = {
@@ -231,14 +239,11 @@ function getPickerMeta(type) {
 }
 
 function getSelectedIds(type) {
-  const { containerId } = getPickerMeta(type);
-  const selected = ($(containerId).dataset.selected || '').split(',').filter(Boolean);
-  return new Set(selected);
+  return new Set(selectedPickerIds[type]);
 }
 
 function setSelectedIds(type, idsSet) {
-  const { containerId } = getPickerMeta(type);
-  $(containerId).dataset.selected = [...idsSet].join(',');
+  selectedPickerIds[type] = new Set(idsSet);
 }
 
 function visualizeItem(item, type) {
@@ -253,11 +258,11 @@ function itemLabel(item, type) {
 }
 
 function buildSuggestionRow(item, type) {
-  return `<button type="button" class="picker-suggestion" data-select-${type}="${item.id}">${visualizeItem(item, type)}<span>${itemLabel(item, type)}</span></button>`;
+  return `<button type="button" class="picker-suggestion" data-picker-action="select" data-picker-type="${type}" data-picker-id="${item.id}">${visualizeItem(item, type)}<span>${itemLabel(item, type)}</span></button>`;
 }
 
 function buildSelectedPill(item, type) {
-  return `<span class="option-chip picker-pill">${visualizeItem(item, type)}<span class="chip-text">${itemLabel(item, type)}</span><button type="button" class="pill-remove" aria-label="Quitar" data-remove-${type}="${item.id}">×</button></span>`;
+  return `<span class="option-chip picker-pill">${visualizeItem(item, type)}<span class="chip-text">${itemLabel(item, type)}</span><button type="button" class="pill-remove" aria-label="Quitar" data-picker-action="remove" data-picker-type="${type}" data-picker-id="${item.id}">×</button></span>`;
 }
 
 function buildPicker(type) {
@@ -276,7 +281,7 @@ function buildPicker(type) {
       <input type="text" id="${type}PickerSearch" name="${type}PickerSearch" class="picker-input" data-picker-input="${type}" placeholder="Escribí para buscar..." value="${query}" />
       <div class="picker-suggestions ${open ? '' : 'hidden'}" data-picker-suggestions="${type}">
         ${suggestions || noItems}
-        <button type="button" class="picker-suggestion picker-add" data-add-${type}="true">${addLabel}</button>
+        <button type="button" class="picker-suggestion picker-add" data-picker-action="add" data-picker-type="${type}">${addLabel}</button>
       </div>
     </div>
   `;
@@ -334,12 +339,20 @@ function buildSlackPayload(meeting) {
 
 async function notifySlackViaAppScript(payload) {
   if (!slackSettings.webhookUrl || !slackSettings.appScriptUrl) return;
-  await fetch(slackSettings.appScriptUrl, {
+  const targetUrl = `${corsProxySettings.baseUrl}${slackSettings.appScriptUrl}`;
+  const response = await fetch(targetUrl, {
     method: 'POST',
     mode: 'cors',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-cors-api-key': corsProxySettings.apiKey,
+    },
     body: JSON.stringify(payload),
   });
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`No se pudo contactar App Script. HTTP ${response.status}. ${details || 'Sin detalle.'}`);
+  }
 }
 
 function renderCreatedLists() {
@@ -536,7 +549,7 @@ function applyQuickFilter(rows) {
     const start = new Date(m.startAt);
     const status = meetingStatus(m);
 
-    if (activeQuickFilter === 'upcoming') return status === 'upcoming' || status === 'in_progress';
+    if (activeQuickFilter === 'upcoming') return status === 'upcoming' || status === 'today' || status === 'in_progress';
     if (activeQuickFilter === 'in_progress') return status === 'in_progress';
     if (activeQuickFilter === 'today') return start.toDateString() === now.toDateString();
     if (activeQuickFilter === 'week') return start >= thisWeek.start && start <= thisWeek.end;
@@ -568,7 +581,7 @@ function updateQuickFilterCounts(rows) {
   rows.forEach((meeting) => {
     const start = new Date(meeting.startAt);
     const status = meetingStatus(meeting);
-    if (status === 'upcoming' || status === 'in_progress') counts.upcoming += 1;
+    if (status === 'upcoming' || status === 'today' || status === 'in_progress') counts.upcoming += 1;
     if (status === 'in_progress') counts.in_progress += 1;
     if (start.toDateString() === now.toDateString()) counts.today += 1;
     if (start >= thisWeek.start && start <= thisWeek.end) counts.week += 1;
@@ -584,7 +597,23 @@ function updateQuickFilterCounts(rows) {
 }
 
 function sortMeetings(rows) {
-  return rows.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+  const rank = {
+    in_progress: 0,
+    upcoming: 1,
+    today: 1,
+    finished: 2,
+  };
+  return rows.sort((a, b) => {
+    const statusA = meetingStatus(a);
+    const statusB = meetingStatus(b);
+    const rankDiff = (rank[statusA] ?? 9) - (rank[statusB] ?? 9);
+    if (rankDiff !== 0) return rankDiff;
+
+    const timeA = new Date(a.startAt).getTime();
+    const timeB = new Date(b.startAt).getTime();
+    if (statusA === 'finished' && statusB === 'finished') return timeB - timeA;
+    return timeA - timeB;
+  });
 }
 
 function getNearestMeetingId(rows) {
@@ -873,9 +902,23 @@ function getOverlappingMeetings(startAt, duration, ignoreId = null) {
 async function onSaveMeeting() {
   const day = $('meetingDate').value;
   const time = $('meetingTime').value;
-  if (!day || !time) return alert('Seleccioná fecha y hora');
+  if (!day || !time) {
+    await IOSSwal.fire({
+      icon: 'warning',
+      title: 'Completá fecha y hora',
+      text: 'Necesitás seleccionar ambos campos para crear la reunión.',
+    });
+    return;
+  }
   const startAt = new Date(`${day}T${time}`);
-  if (Number.isNaN(startAt.getTime())) return alert('Fecha/hora inválida');
+  if (Number.isNaN(startAt.getTime())) {
+    await IOSSwal.fire({
+      icon: 'error',
+      title: 'Fecha/hora inválida',
+      text: 'Revisá los valores ingresados e intentá nuevamente.',
+    });
+    return;
+  }
 
   const selectedProviderIds = [...getSelectedIds('provider')];
   const selectedParticipantIds = [...getSelectedIds('participant')];
@@ -893,6 +936,14 @@ async function onSaveMeeting() {
     notifySlack: $('notifySlack').checked,
     slackReminderMinutes: Number($('slackReminderMinutes').value || 15),
   };
+  if (!payload.note) {
+    await IOSSwal.fire({
+      icon: 'warning',
+      title: 'Falta la nota de la reunión',
+      text: 'Completá la nota para poder crear el evento.',
+    });
+    return;
+  }
 
   const overlaps = getOverlappingMeetings(startAt, payload.duration, editingMeetingId);
   if (overlaps.length) {
@@ -1087,42 +1138,43 @@ function bindPickerEvents(type) {
   const container = $(containerId);
 
   container.addEventListener('click', (e) => {
+    const actionButton = e.target.closest('[data-picker-action]');
+    if (actionButton) {
+      e.preventDefault();
+      e.stopPropagation();
+      const action = actionButton.dataset.pickerAction;
+      const id = actionButton.dataset.pickerId;
+      if (action === 'add') {
+        pickerUiState[type].open = false;
+        pickerUiState[type].query = '';
+        renderPickers();
+        if (type === 'provider') openProviderModal();
+        else openParticipantModal();
+        return;
+      }
+      if (action === 'select' && id) {
+        const selected = getSelectedIds(type);
+        selected.add(id);
+        setSelectedIds(type, selected);
+        pickerUiState[type].query = '';
+        pickerUiState[type].open = true;
+        renderPickers();
+        $(containerId).querySelector(`[data-picker-input="${type}"]`)?.focus();
+        return;
+      }
+      if (action === 'remove' && id) {
+        const selected = getSelectedIds(type);
+        selected.delete(id);
+        setSelectedIds(type, selected);
+        renderPickers();
+      }
+      return;
+    }
+
     const shell = e.target.closest(`[data-picker-shell="${type}"]`);
-    if (shell) {
+    if (shell && !actionButton) {
       pickerUiState[type].open = true;
       syncPickerDropdownVisibility(type);
-    }
-    const add = e.target.closest(`[data-add-${type}]`);
-    const select = e.target.closest(`[data-select-${type}]`);
-    const removeBtn = e.target.closest(`[data-remove-${type}]`);
-
-    if (add) {
-      pickerUiState[type].open = false;
-      pickerUiState[type].query = '';
-      renderPickers();
-      if (type === 'provider') openProviderModal();
-      else openParticipantModal();
-      return;
-    }
-
-    if (select) {
-      const id = select.dataset[`select${type[0].toUpperCase()}${type.slice(1)}`];
-      const selected = getSelectedIds(type);
-      selected.add(id);
-      setSelectedIds(type, selected);
-      pickerUiState[type].query = '';
-      pickerUiState[type].open = true;
-      renderPickers();
-      $(containerId).querySelector(`[data-picker-input="${type}"]`)?.focus();
-      return;
-    }
-
-    if (removeBtn) {
-      const id = removeBtn.dataset[`remove${type[0].toUpperCase()}${type.slice(1)}`];
-      const selected = getSelectedIds(type);
-      selected.delete(id);
-      setSelectedIds(type, selected);
-      renderPickers();
     }
   });
 
@@ -1176,7 +1228,14 @@ function bindEvents() {
     e.preventDefault();
     const webhookUrl = $('slackWebhookUrl').value.trim();
     const appScriptUrl = $('appsScriptUrl').value.trim();
-    if (!webhookUrl || !appScriptUrl) return;
+    if (!webhookUrl || !appScriptUrl) {
+      await IOSSwal.fire({
+        icon: 'warning',
+        title: 'Faltan datos de Slack',
+        text: 'Completá webhook y URL de App Script antes de guardar.',
+      });
+      return;
+    }
     $('saveSlackConfig').disabled = true;
     $('saveSlackConfig').innerHTML = '<span class="spinner mini"></span> Guardando...';
     slackSettings.webhookUrl = webhookUrl;

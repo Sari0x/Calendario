@@ -1102,7 +1102,6 @@ textarea {
 
   .quick-filters {
     display: flex;
-    flex-wrap: nowrap;
     gap: 8px;
     margin: 0 -2px 6px;
     width: calc(100% + 4px);

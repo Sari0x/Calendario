@@ -1310,6 +1310,7 @@ function bindEvents() {
     activeQuickFilter = btn.dataset.filter;
     currentPage = 1;
     document.querySelectorAll('.quick-filter').forEach((item) => item.classList.toggle('active', item === btn));
+    btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
     await fetchMeetings();
   });
 

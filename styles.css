@@ -573,8 +573,7 @@ textarea {
   width: 100px;
   object-fit: contain;
   background-color: #ffffff70;
-  padding: 4px 8px;
-  border-radius: 20px;
+  border-radius: 15px;
 }
 
 .participants-list {

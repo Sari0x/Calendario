@@ -133,6 +133,7 @@ function parseLinkType(url) {
 }
 
 function meetingStatus(meeting) {
+  if (meeting.finishedAt) return 'finished';
   const now = new Date();
   const start = new Date(meeting.startAt);
   const end = new Date(start.getTime() + meeting.duration * 60000);
@@ -177,7 +178,7 @@ function countdownCompactLabel(startAt) {
   const now = new Date();
   const start = new Date(startAt);
   const diffMs = start - now;
-  if (diffMs <= 0) return 'inicia pronto';
+  if (diffMs <= 0) return '';
 
   const totalMinutes = Math.floor(diffMs / 60000);
   const days = Math.floor(totalMinutes / 1440);
@@ -186,6 +187,7 @@ function countdownCompactLabel(startAt) {
 
   if (days > 0) return `${days}d ${hours}h ${minutes}m`;
   if (hours > 0) return `${hours}h ${minutes}m`;
+  if (days === 0 && hours === 0 && minutes <= 0) return '';
   return `${minutes}m`;
 }
 
@@ -641,6 +643,16 @@ function renderCurrentPage() {
   startUiTicker();
 }
 
+function refreshLiveMeetingsView() {
+  const rows = [...baseMeetings];
+  updateQuickFilterCounts(rows);
+  filteredMeetings = sortMeetings(applyQuickFilter(rows));
+  if (currentPage > Math.max(Math.ceil(filteredMeetings.length / pageSize), 1)) {
+    currentPage = 1;
+  }
+  renderCurrentPage();
+}
+
 function startCountdowns() {
   if (countdownInterval) window.clearInterval(countdownInterval);
 
@@ -685,13 +697,14 @@ function updateTopIndicators() {
     .filter((m) => meetingStatus(m) !== 'finished' && new Date(m.startAt).getTime() > now)
     .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
   const counter = $('nextMeetingCounter');
-  if (!nextMeeting) {
+  const compact = nextMeeting ? countdownCompactLabel(nextMeeting.startAt) : '';
+  if (!nextMeeting || !compact) {
     counter.classList.add('hidden');
     counter.textContent = '';
     return;
   }
   counter.classList.remove('hidden');
-  counter.innerHTML = `<i class="bi bi-alarm"></i> Próxima reunión en ${countdownCompactLabel(nextMeeting.startAt)}`;
+  counter.innerHTML = `<i class="bi bi-alarm"></i> Próxima reunión en ${compact}`;
 }
 
 function setNextMeetingCounterLoading(show) {
@@ -711,9 +724,9 @@ function setNextMeetingCounterLoading(show) {
 
 function startUiTicker() {
   if (uiTickerInterval) window.clearInterval(uiTickerInterval);
-  const tick = () => updateTopIndicators();
-  tick();
-  uiTickerInterval = window.setInterval(tick, 60000);
+  uiTickerInterval = window.setInterval(() => {
+    refreshLiveMeetingsView();
+  }, 60000);
 }
 
 async function loadReferences() {
@@ -1066,7 +1079,11 @@ async function finishMeetingNow(id) {
   pendingFinishMeetingIds.add(id);
   renderCurrentPage();
   try {
-    await update(ref(rtdb, `meetings/${id}`), { duration: elapsedMin, updatedAt: new Date().toISOString() });
+    await update(ref(rtdb, `meetings/${id}`), {
+      duration: elapsedMin,
+      finishedAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    });
     await fetchMeetings();
   } catch (error) {
     console.error(error);
@@ -1193,6 +1210,12 @@ function bindPickerEvents(type) {
 }
 
 function bindEvents() {
+  document.querySelectorAll('.brand-logo').forEach((logo) => {
+    logo.addEventListener('click', () => {
+      window.location.href = './index.html';
+    });
+  });
+
   $('openMeetingForm').addEventListener('click', async () => {
     const isCollapsed = $('meetingFormSection').classList.contains('collapsed');
     if (isCollapsed) {

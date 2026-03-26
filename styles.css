@@ -77,6 +77,7 @@ p {
 .brand-logo {
   width: 180px;
   object-fit: contain;
+  cursor: pointer;
 }
 
 .menu-actions {
@@ -443,6 +444,7 @@ textarea {
   gap: 10px;
   border: 1px solid #ffffff99;
   transition: transform 0.2s ease, filter 0.2s ease;
+  cursor: pointer;
 }
 
 .meeting-item:hover {

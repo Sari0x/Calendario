@@ -82,6 +82,10 @@ const providerIcons = {
   teams:
     'https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Microsoft_Office_Teams_%282025%E2%80%93present%29.svg/3840px-Microsoft_Office_Teams_%282025%E2%80%93present%29.svg.png',
   zoom: 'https://upload.wikimedia.org/wikipedia/commons/2/24/Zoom-Logo.png',
+  webex: 'https://tesrex.com/wp-content/uploads/2021/07/Webex-logo-new.png',
+  discord:
+    'https://static.vecteezy.com/system/resources/previews/023/986/880/non_2x/discord-logo-discord-logo-transparent-discord-icon-transparent-free-free-png.png',
+  slack_huddles: 'https://www.itsconvo.com/_next/image?url=%2Fslack-logo.png&w=3840&q=75',
 };
 
 const esFmt = new Intl.DateTimeFormat('es-ES', { dateStyle: 'full', timeStyle: 'short' });
@@ -137,6 +141,9 @@ function parseLinkType(url) {
   if (low.includes('meet.google')) return 'meet';
   if (low.includes('zoom.us')) return 'zoom';
   if (low.includes('teams.microsoft') || low.includes('teams.live') || low.includes('team')) return 'teams';
+  if (low.includes('webex.com') || low.includes('cisco.com/webex')) return 'webex';
+  if (low.includes('discord.com') || low.includes('discord.gg')) return 'discord';
+  if (low.includes('slack.com') && (low.includes('huddle') || low.includes('/client/'))) return 'slack_huddles';
   return null;
 }
 
@@ -734,17 +741,17 @@ function updateTopIndicators() {
     return;
   }
   counter.classList.remove('hidden');
-  counter.innerHTML = `<i class="bi bi-alarm"></i> Próxima reunión en ${compact}`;
+  counter.innerHTML = `<i class="bi bi-alarm"></i> Próxima en ${compact}`;
 }
 
 function setNextMeetingCounterLoading(show) {
   const counter = $('nextMeetingCounter');
   if (show) {
     counter.classList.remove('hidden');
-    counter.innerHTML = '<span class="spinner mini"></span> Cargando próxima reunión...';
+    counter.innerHTML = '<span class="spinner mini"></span> Cargando próxima...';
     return;
   }
-  if (counter.textContent.includes('Cargando próxima reunión')) {
+  if (counter.textContent.includes('Cargando próxima')) {
     counter.textContent = '';
     counter.classList.add('hidden');
   } else if (!counter.textContent.trim()) {

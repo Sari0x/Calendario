@@ -32,6 +32,7 @@ const spinner = $('spinner');
 const meetingsList = $('meetingsList');
 const pageInfo = $('pageInfo');
 const appNotice = $('appNotice');
+const headerActionButtons = Array.from(document.querySelectorAll('.menu-actions button'));
 
 let providers = [];
 let participants = [];
@@ -104,6 +105,12 @@ function showSpinner(show) {
 function showNotice(message) {
   appNotice.textContent = message;
   appNotice.classList.remove('hidden');
+}
+
+function setHeaderActionsDisabled(disabled) {
+  headerActionButtons.forEach((button) => {
+    button.disabled = disabled;
+  });
 }
 
 function scrollToMeetingForm() {
@@ -319,9 +326,10 @@ function renderPickers() {
   renderCreatedLists();
 }
 
-function loadSlackSettings() {
+async function loadSlackSettings() {
   try {
-    const saved = JSON.parse(localStorage.getItem('slackSettings') || '{}');
+    const snap = await get(ref(rtdb, 'settings/slack'));
+    const saved = snap.val() || {};
     slackSettings.webhookUrl = saved.webhookUrl || '';
     slackSettings.appScriptUrl = saved.appScriptUrl || '';
   } catch (error) {
@@ -334,8 +342,12 @@ function loadSlackSettings() {
   if (appScriptInput) appScriptInput.value = slackSettings.appScriptUrl;
 }
 
-function saveSlackSettings() {
-  localStorage.setItem('slackSettings', JSON.stringify(slackSettings));
+async function saveSlackSettings() {
+  await set(ref(rtdb, 'settings/slack'), {
+    webhookUrl: slackSettings.webhookUrl || '',
+    appScriptUrl: slackSettings.appScriptUrl || '',
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 function buildSlackPayload(meeting, options = {}) {
@@ -1266,8 +1278,8 @@ function bindEvents() {
   });
   $('openProvidersModal').addEventListener('click', () => openProviderModal());
   $('openParticipantsModal').addEventListener('click', () => openParticipantModal());
-  $('openSlackConfigModal').addEventListener('click', () => {
-    loadSlackSettings();
+  $('openSlackConfigModal').addEventListener('click', async () => {
+    await loadSlackSettings();
     $('slackConfigModal').showModal();
   });
 
@@ -1299,7 +1311,7 @@ function bindEvents() {
     $('saveSlackConfig').innerHTML = '<span class="spinner mini"></span> Guardando...';
     slackSettings.webhookUrl = webhookUrl;
     slackSettings.appScriptUrl = appScriptUrl;
-    saveSlackSettings();
+    await saveSlackSettings();
     await new Promise((resolve) => setTimeout(resolve, 350));
     $('saveSlackConfig').disabled = false;
     $('saveSlackConfig').textContent = 'Guardar';
@@ -1475,11 +1487,15 @@ function setupFlatpickr() {
 }
 
 (async function init() {
+  setHeaderActionsDisabled(true);
   showSpinner(true);
   setNextMeetingCounterLoading(true);
-  setupFlatpickr();
-  bindEvents();
-  loadSlackSettings();
-  await verifyRTDBAccess();
-  await Promise.all([loadReferences(), fetchMeetings({ forceRefresh: true })]);
+  try {
+    setupFlatpickr();
+    bindEvents();
+    await verifyRTDBAccess();
+    await Promise.all([loadSlackSettings(), loadReferences(), fetchMeetings({ forceRefresh: true })]);
+  } finally {
+    setHeaderActionsDisabled(false);
+  }
 })();

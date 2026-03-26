@@ -1094,19 +1094,28 @@ textarea {
 
   .quick-filters-wrap {
     padding: 0 0 2px;
+    width: 100%;
+    overflow: hidden;
   }
 
   .quick-filters {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
     gap: 8px;
     margin-bottom: 6px;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
   }
 
   .quick-filter {
-    width: 100%;
+    flex: 0 0 auto;
+    width: auto;
     justify-content: flex-start;
-    min-width: 0;
+    min-width: max-content;
   }
 
   .quick-filters-fade {

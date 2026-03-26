@@ -376,7 +376,7 @@ textarea {
 }
 
 .quick-filters {
-  display: flex;
+  display: inline-flex;
   gap: 8px;
   flex-wrap: nowrap;
   width: 100%;
@@ -1146,4 +1146,26 @@ textarea {
   50% {
     box-shadow: 0 0 0 6px rgba(255, 53, 79, 0);
   }
+}
+
+.slack-notify-box {
+  border: 1px solid #d8d3ef;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: #faf9ff;
+  display: grid;
+  gap: 10px;
+}
+
+.slack-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: #3f3965;
+  font-weight: 600;
+}
+
+.slack-check input {
+  width: 16px;
+  height: 16px;
 }

@@ -52,7 +52,6 @@ let editingParticipantId = null;
 let nearestMeetingId = null;
 let uiTickerInterval = null;
 const pendingFinishMeetingIds = new Set();
-const expandedPostMeetingIds = new Set();
 let baseMeetings = [];
 let dateMeetCounts = {};
 const slackSettings = {

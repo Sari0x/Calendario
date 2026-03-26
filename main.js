@@ -102,6 +102,26 @@ const IOSSwal = Swal.mixin({
   },
 });
 
+function formatRuntimeError(error) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') {
+    if ('message' in error && typeof error.message === 'string') return error.message;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return 'Error no serializable.';
+    }
+  }
+  return 'Error desconocido.';
+}
+
+function handleRuntimeError(error, fallbackMessage = 'Ocurrió un error inesperado.') {
+  const detail = formatRuntimeError(error);
+  console.error('[Calendario] Error capturado:', error);
+  showNotice(`${fallbackMessage} ${detail}`);
+}
+
 function showSpinner(show) {
   spinner.classList.toggle('hidden', !show);
 }
@@ -1502,7 +1522,13 @@ function setupFlatpickr() {
     bindEvents();
     await verifyRTDBAccess();
     await Promise.all([loadSlackSettings(), loadReferences(), fetchMeetings({ forceRefresh: true })]);
+  } catch (error) {
+    handleRuntimeError(error, 'No se pudo inicializar la aplicación.');
   } finally {
     setHeaderActionsDisabled(false);
   }
 })();
+
+window.addEventListener('unhandledrejection', (event) => {
+  handleRuntimeError(event.reason, 'Se detectó un error asíncrono en la app.');
+});

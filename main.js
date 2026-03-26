@@ -270,7 +270,7 @@ function buildPicker(type) {
   $(containerId).innerHTML = `
     <div class="picker-shell ${open ? 'is-open' : ''}" data-picker-shell="${type}">
       <div class="picker-selected-wrap">${selectedItems.map((item) => buildSelectedPill(item, type)).join('')}</div>
-      <input type="text" class="picker-input" data-picker-input="${type}" placeholder="Escribí para buscar..." value="${query}" />
+      <input type="text" id="${type}PickerSearch" name="${type}PickerSearch" class="picker-input" data-picker-input="${type}" placeholder="Escribí para buscar..." value="${query}" />
       <div class="picker-suggestions ${open ? '' : 'hidden'}" data-picker-suggestions="${type}">
         ${suggestions || noItems}
         <button type="button" class="picker-suggestion picker-add" data-add-${type}="true">${addLabel}</button>
@@ -441,6 +441,8 @@ function meetingCard(meeting) {
     }
   }
   const isFinishing = pendingFinishMeetingIds.has(meeting.id);
+  const isPostExpanded = expandedPostMeetingIds.has(meeting.id);
+  const hasRecording = Boolean((meeting.recordingLink || '').trim());
 
   return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''} ${isNearest ? 'is-nearest' : ''}">
     <div class="meeting-top">
@@ -481,14 +483,31 @@ function meetingCard(meeting) {
     ${
       isFinished
         ? `<div class="post-meeting-box" data-post-box="${meeting.id}">
-            <span class="post-meeting-title"><i class="bi bi-journal-check"></i> Post reunión</span>
-            <label>Link de grabación
-              <input type="url" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
-            </label>
-            <label>Comentario post reunión
-              <textarea rows="2" data-post-comment="${meeting.id}" placeholder="Notas finales...">${meeting.postComment || ''}</textarea>
-            </label>
-            <button class="btn btn-pill btn-soft" data-save-post="${meeting.id}"><i class="bi bi-save2"></i> Guardar post reunión</button>
+            <div class="post-meeting-top">
+              <span class="post-meeting-title"><i class="bi bi-journal-check"></i> Post reunión</span>
+              <button class="btn btn-pill btn-ghost btn-subtle" data-toggle-post="${meeting.id}">
+                <i class="bi ${isPostExpanded ? 'bi-chevron-up' : 'bi-chevron-down'}"></i> ${isPostExpanded ? 'Ocultar' : 'Editar'}
+              </button>
+            </div>
+            ${
+              hasRecording
+                ? `<div class="recording-preview">
+                    <button class="btn btn-pill rec-pill" data-open-recording="${meeting.id}"><span class="rec-dot"></span> REC</button>
+                    <span class="recording-label">Grabación cargada</span>
+                    <button class="btn btn-pill btn-ghost btn-subtle" data-open-recording="${meeting.id}"><i class="bi bi-box-arrow-up-right"></i> Abrir</button>
+                    <button class="btn btn-pill btn-ghost btn-subtle" data-copy-recording="${meeting.id}"><i class="bi bi-copy"></i> Copiar</button>
+                  </div>`
+                : '<span class="recording-empty"><i class="bi bi-camera-reels"></i> Sin grabación cargada</span>'
+            }
+            <div class="post-fields ${isPostExpanded ? '' : 'hidden'}">
+              <label>Link de grabación
+                <input type="url" name="recordingLink" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
+              </label>
+              <label>Comentario post reunión
+                <textarea rows="2" name="postComment" data-post-comment="${meeting.id}" placeholder="Notas finales...">${meeting.postComment || ''}</textarea>
+              </label>
+              <button class="btn btn-pill btn-soft" data-save-post="${meeting.id}"><i class="bi bi-save2"></i> Guardar post reunión</button>
+            </div>
           </div>`
         : ''
     }
@@ -1252,6 +1271,15 @@ function bindEvents() {
     const idCopyLink = e.target.closest('[data-copy-link]')?.dataset?.copyLink;
     const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     const idSavePost = e.target.closest('[data-save-post]')?.dataset?.savePost;
+    const idTogglePost = e.target.closest('[data-toggle-post]')?.dataset?.togglePost;
+    const idOpenRecording = e.target.closest('[data-open-recording]')?.dataset?.openRecording;
+    const idCopyRecording = e.target.closest('[data-copy-recording]')?.dataset?.copyRecording;
+    if (idTogglePost) {
+      if (expandedPostMeetingIds.has(idTogglePost)) expandedPostMeetingIds.delete(idTogglePost);
+      else expandedPostMeetingIds.add(idTogglePost);
+      renderCurrentPage();
+      return;
+    }
     if (idRes) await rescheduleMeeting(idRes);
     if (idFinish) await finishMeetingNow(idFinish);
     if (idEdit) {
@@ -1266,6 +1294,14 @@ function bindEvents() {
     if (idCopySummary) {
       const row = filteredMeetings.find((m) => m.id === idCopySummary);
       if (row) await copyToClipboard(buildMeetingSummary(row), 'Resumen copiado para compartir por WhatsApp.');
+    }
+    if (idOpenRecording) {
+      const row = filteredMeetings.find((m) => m.id === idOpenRecording);
+      if (row?.recordingLink) window.open(row.recordingLink, '_blank', 'noopener,noreferrer');
+    }
+    if (idCopyRecording) {
+      const row = filteredMeetings.find((m) => m.id === idCopyRecording);
+      if (row?.recordingLink) await copyToClipboard(row.recordingLink, 'Link de grabación copiado.');
     }
     if (idSavePost) await savePostMeeting(idSavePost);
   });

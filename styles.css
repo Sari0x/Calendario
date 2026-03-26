@@ -84,6 +84,19 @@ p {
   gap: 10px;
   margin-top: 12px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.menu-separator {
+  width: 1px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.btn-slack {
+  background: linear-gradient(120deg, #4a154b 0%, #7b2f81 100%);
+  color: #fff;
+  border-color: #9350a2;
 }
 
 .container {
@@ -359,21 +372,25 @@ textarea {
 .quick-filters-wrap {
   position: relative;
   width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
+  overflow: hidden;
 }
 
 .quick-filters {
   display: inline-flex;
   gap: 8px;
   flex-wrap: nowrap;
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
   padding-bottom: 6px;
   margin-bottom: 12px;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+
+.quick-filters::-webkit-scrollbar {
+  display: none;
 }
 
 .quick-filter {
@@ -656,12 +673,12 @@ textarea {
 }
 
 .post-meeting-box {
-  border: 1px solid #cfc8f4;
-  border-radius: 16px;
+  border: 1px solid #cdc4f6;
+  border-radius: 18px;
   padding: 12px;
   display: grid;
   gap: 10px;
-  background: linear-gradient(180deg, #ffffffcc 0%, #f6f3ff 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #f3efff 100%);
 }
 
 .post-meeting-title {
@@ -671,6 +688,60 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.post-meeting-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.post-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.recording-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: #ffffffc4;
+  border: 1px solid #dad3fb;
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+
+.recording-label {
+  font-size: 12px;
+  color: #3f3a67;
+  font-weight: 700;
+}
+
+.recording-empty {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: #6a648e;
+  font-size: 12px;
+}
+
+.rec-pill {
+  background: #311226;
+  color: #fff;
+  border-color: #5a1d42;
+  padding: 5px 10px;
+  animation: recPulse 1.1s ease-in-out infinite;
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff354f;
+  box-shadow: 0 0 0 0 rgba(255, 53, 79, 0.55);
+  animation: recDotPulse 1.1s ease-in-out infinite;
 }
 
 .pagination {
@@ -982,14 +1053,12 @@ textarea {
   }
 
   .quick-filters-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
     padding-bottom: 2px;
   }
 
   .quick-filters {
     margin-bottom: 8px;
-    min-width: max-content;
+    width: 100%;
     padding-right: 12px;
   }
 
@@ -1030,6 +1099,52 @@ textarea {
   .menu-actions .btn i {
     margin: 0;
     font-size: 18px;
+  }
+
+  .menu-separator {
+    height: 20px;
+  }
+}
+
+.slack-notify-box {
+  border: 1px solid #d8d3ef;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: #faf9ff;
+  display: grid;
+  gap: 10px;
+}
+
+.slack-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: #3f3965;
+  font-weight: 600;
+}
+
+.slack-check input {
+  width: 16px;
+  height: 16px;
+}
+
+@keyframes recPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 53, 79, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(255, 53, 79, 0.08);
+  }
+}
+
+@keyframes recDotPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 53, 79, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 53, 79, 0);
   }
 }
 

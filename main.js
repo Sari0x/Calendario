@@ -549,7 +549,7 @@ function applyQuickFilter(rows) {
     const start = new Date(m.startAt);
     const status = meetingStatus(m);
 
-    if (activeQuickFilter === 'upcoming') return status === 'upcoming' || status === 'in_progress';
+    if (activeQuickFilter === 'upcoming') return status === 'upcoming' || status === 'today' || status === 'in_progress';
     if (activeQuickFilter === 'in_progress') return status === 'in_progress';
     if (activeQuickFilter === 'today') return start.toDateString() === now.toDateString();
     if (activeQuickFilter === 'week') return start >= thisWeek.start && start <= thisWeek.end;
@@ -581,7 +581,7 @@ function updateQuickFilterCounts(rows) {
   rows.forEach((meeting) => {
     const start = new Date(meeting.startAt);
     const status = meetingStatus(meeting);
-    if (status === 'upcoming' || status === 'in_progress') counts.upcoming += 1;
+    if (status === 'upcoming' || status === 'today' || status === 'in_progress') counts.upcoming += 1;
     if (status === 'in_progress') counts.in_progress += 1;
     if (start.toDateString() === now.toDateString()) counts.today += 1;
     if (start >= thisWeek.start && start <= thisWeek.end) counts.week += 1;
@@ -597,7 +597,23 @@ function updateQuickFilterCounts(rows) {
 }
 
 function sortMeetings(rows) {
-  return rows.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+  const rank = {
+    in_progress: 0,
+    upcoming: 1,
+    today: 1,
+    finished: 2,
+  };
+  return rows.sort((a, b) => {
+    const statusA = meetingStatus(a);
+    const statusB = meetingStatus(b);
+    const rankDiff = (rank[statusA] ?? 9) - (rank[statusB] ?? 9);
+    if (rankDiff !== 0) return rankDiff;
+
+    const timeA = new Date(a.startAt).getTime();
+    const timeB = new Date(b.startAt).getTime();
+    if (statusA === 'finished' && statusB === 'finished') return timeB - timeA;
+    return timeA - timeB;
+  });
 }
 
 function getNearestMeetingId(rows) {

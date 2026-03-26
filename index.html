@@ -33,6 +33,7 @@
         <button id="openMeetingForm" class="btn btn-pill btn-primary"><i class="bi bi-plus-circle"></i> <span class="btn-label">Nuevo evento</span></button>
         <button id="openProvidersModal" class="btn btn-pill btn-soft"><i class="bi bi-building-add"></i> <span class="btn-label">Proveedor</span></button>
         <button id="openParticipantsModal" class="btn btn-pill btn-soft"><i class="bi bi-person-plus"></i> <span class="btn-label">Participante</span></button>
+        <button id="openSlackConfigModal" class="btn btn-pill btn-soft"><i class="bi bi-slack"></i> <span class="btn-label">Webhook Slack</span></button>
       </div>
     </header>
 
@@ -57,6 +58,10 @@
           <label><i class="bi bi-people"></i> Participantes<div id="participantsPicker" class="multi-picker"></div></label>
           <label class="full-col"><i class="bi bi-journal-text"></i> Nota<textarea id="meetingNote" rows="3" placeholder="Agregar nota"></textarea></label>
           <label class="full-col"><i class="bi bi-link-45deg"></i> Link (opcional)<input id="meetingLink" type="url" placeholder="https://..." /></label>
+          <div class="full-col slack-notify-box">
+            <label class="slack-check"><input id="notifySlack" type="checkbox" checked /> Notificar por Slack a webhook</label>
+            <label><i class="bi bi-bell"></i> Avisar minutos antes<input id="slackReminderMinutes" type="number" min="1" step="1" value="15" /></label>
+          </div>
         </div>
       </section>
 
@@ -84,6 +89,7 @@
             <button class="quick-filter" data-filter="week"><i class="bi bi-calendar-week"></i> Esta semana <span class="quick-count" data-count-filter="week">0</span></button>
             <button class="quick-filter" data-filter="next_week"><i class="bi bi-calendar2-week"></i> Próxima semana <span class="quick-count" data-count-filter="next_week">0</span></button>
             <button class="quick-filter" data-filter="finished"><i class="bi bi-check2-circle"></i> Finalizadas <span class="quick-count" data-count-filter="finished">0</span></button>
+            <button class="quick-filter" data-filter="recordings"><i class="bi bi-camera-reels"></i> Con grabaciones <span class="quick-count" data-count-filter="recordings">0</span></button>
           </div>
           <div class="quick-filters-fade"></div>
         </div>
@@ -146,6 +152,21 @@
         <div class="modal-actions">
           <button type="button" id="cancelParticipant" class="btn btn-pill btn-ghost">Cancelar</button>
           <button type="submit" id="saveParticipant" class="btn btn-pill btn-primary">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+
+
+    <dialog id="slackConfigModal" class="modal">
+      <form id="slackConfigForm" class="modal-content">
+        <h3>Integración Slack + App Script</h3>
+        <label>Webhook Slack <input id="slackWebhookUrl" type="url" placeholder="https://hooks.slack.com/services/..." required /></label>
+        <label>URL App Script <input id="appsScriptUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" required /></label>
+        <p class="sub">Se usará para enviar aviso al crear la reunión y programar recordatorios.</p>
+        <div class="modal-actions">
+          <button type="button" id="cancelSlackConfig" class="btn btn-pill btn-ghost">Cancelar</button>
+          <button type="submit" id="saveSlackConfig" class="btn btn-pill btn-primary">Guardar</button>
         </div>
       </form>
     </dialog>

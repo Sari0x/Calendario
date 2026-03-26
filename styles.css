@@ -366,11 +366,11 @@ textarea {
 }
 
 .quick-filters {
-  display: flex;
+  display: inline-flex;
   gap: 8px;
   flex-wrap: nowrap;
-  width: 100%;
-  min-width: 0;
+  width: max-content;
+  min-width: 100%;
   padding-bottom: 6px;
   margin-bottom: 12px;
   scrollbar-width: thin;
@@ -656,12 +656,21 @@ textarea {
 }
 
 .post-meeting-box {
-  border: 1px dashed #bdb8d8;
-  border-radius: 14px;
-  padding: 10px;
+  border: 1px solid #cfc8f4;
+  border-radius: 16px;
+  padding: 12px;
   display: grid;
-  gap: 8px;
-  background: #ffffff85;
+  gap: 10px;
+  background: linear-gradient(180deg, #ffffffcc 0%, #f6f3ff 100%);
+}
+
+.post-meeting-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4b4478;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .pagination {
@@ -975,20 +984,20 @@ textarea {
   .quick-filters-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
   }
 
   .quick-filters {
     margin-bottom: 8px;
+    min-width: max-content;
+    padding-right: 12px;
   }
 
   .quick-filters-fade {
     display: none;
   }
 
-  .next-meeting-counter {
-    display: none;
-  }
-
+  
   .filter {
     width: 100%;
   }
@@ -1022,4 +1031,26 @@ textarea {
     margin: 0;
     font-size: 18px;
   }
+}
+
+.slack-notify-box {
+  border: 1px solid #d8d3ef;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: #faf9ff;
+  display: grid;
+  gap: 10px;
+}
+
+.slack-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: #3f3965;
+  font-weight: 600;
+}
+
+.slack-check input {
+  width: 16px;
+  height: 16px;
 }

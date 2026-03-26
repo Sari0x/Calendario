@@ -55,6 +55,10 @@ const pendingFinishMeetingIds = new Set();
 const expandedPostMeetingIds = new Set();
 let baseMeetings = [];
 let dateMeetCounts = {};
+const slackSettings = {
+  webhookUrl: '',
+  appScriptUrl: '',
+};
 
 const pickerUiState = {
   provider: { query: '', open: false },
@@ -267,7 +271,7 @@ function buildPicker(type) {
   $(containerId).innerHTML = `
     <div class="picker-shell ${open ? 'is-open' : ''}" data-picker-shell="${type}">
       <div class="picker-selected-wrap">${selectedItems.map((item) => buildSelectedPill(item, type)).join('')}</div>
-      <input type="text" class="picker-input" data-picker-input="${type}" placeholder="Escribí para buscar..." value="${query}" />
+      <input type="text" id="${type}PickerSearch" name="${type}PickerSearch" class="picker-input" data-picker-input="${type}" placeholder="Escribí para buscar..." value="${query}" />
       <div class="picker-suggestions ${open ? '' : 'hidden'}" data-picker-suggestions="${type}">
         ${suggestions || noItems}
         <button type="button" class="picker-suggestion picker-add" data-add-${type}="true">${addLabel}</button>
@@ -288,6 +292,52 @@ function renderPickers() {
   buildPicker('provider');
   buildPicker('participant');
   renderCreatedLists();
+}
+
+function loadSlackSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('slackSettings') || '{}');
+    slackSettings.webhookUrl = saved.webhookUrl || '';
+    slackSettings.appScriptUrl = saved.appScriptUrl || '';
+  } catch (error) {
+    slackSettings.webhookUrl = '';
+    slackSettings.appScriptUrl = '';
+  }
+  const webhookInput = $('slackWebhookUrl');
+  const appScriptInput = $('appsScriptUrl');
+  if (webhookInput) webhookInput.value = slackSettings.webhookUrl;
+  if (appScriptInput) appScriptInput.value = slackSettings.appScriptUrl;
+}
+
+function saveSlackSettings() {
+  localStorage.setItem('slackSettings', JSON.stringify(slackSettings));
+}
+
+function buildSlackPayload(meeting) {
+  return {
+    webhookUrl: slackSettings.webhookUrl,
+    type: 'create_meeting',
+    reminderMinutes: Number(meeting.slackReminderMinutes || 15),
+    meeting: {
+      id: meeting.id || null,
+      note: meeting.note || '',
+      link: meeting.link || '',
+      duration: meeting.duration || 60,
+      startAt: meeting.startAt,
+      providers: (meeting.providers || []).map((p) => p.name).join(', '),
+      participants: (meeting.participants || []).map((p) => `${p.name} ${p.lastName}`).join(', '),
+    },
+  };
+}
+
+async function notifySlackViaAppScript(payload) {
+  if (!slackSettings.webhookUrl || !slackSettings.appScriptUrl) return;
+  await fetch(slackSettings.appScriptUrl, {
+    method: 'POST',
+    mode: 'cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
 
 function renderCreatedLists() {
@@ -391,8 +441,9 @@ function meetingCard(meeting) {
       countdown = `<span class="countdown alert-upcoming ${isNearest ? 'nearest-countdown' : ''}" data-countdown="${meeting.startAt}"><i class="bi bi-alarm"></i> ${countdownLabel(meeting.startAt)}</span>`;
     }
   }
-  const isPostExpanded = expandedPostMeetingIds.has(meeting.id);
   const isFinishing = pendingFinishMeetingIds.has(meeting.id);
+  const isPostExpanded = expandedPostMeetingIds.has(meeting.id);
+  const hasRecording = Boolean((meeting.recordingLink || '').trim());
 
   return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''} ${isNearest ? 'is-nearest' : ''}">
     <div class="meeting-top">
@@ -432,17 +483,32 @@ function meetingCard(meeting) {
     </div>
     ${
       isFinished
-        ? `<button class="btn btn-ghost btn-soft-radius" data-toggle-post="${meeting.id}">
-            <i class="bi ${isPostExpanded ? 'bi-chevron-up' : 'bi-chevron-down'}"></i> ${isPostExpanded ? 'Ocultar post reunión' : 'Cargar post reunión'}
-          </button>
-          <div class="post-meeting-box ${isPostExpanded ? '' : 'hidden'}" data-post-box="${meeting.id}">
-            <label>Link de grabación
-              <input type="url" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
-            </label>
-            <label>Comentario post reunión
-              <textarea rows="2" data-post-comment="${meeting.id}" placeholder="Notas finales...">${meeting.postComment || ''}</textarea>
-            </label>
-            <button class="btn btn-pill btn-soft" data-save-post="${meeting.id}"><i class="bi bi-save2"></i> Guardar post reunión</button>
+        ? `<div class="post-meeting-box" data-post-box="${meeting.id}">
+            <div class="post-meeting-top">
+              <span class="post-meeting-title"><i class="bi bi-journal-check"></i> Post reunión</span>
+              <button class="btn btn-pill btn-ghost btn-subtle" data-toggle-post="${meeting.id}">
+                <i class="bi ${isPostExpanded ? 'bi-chevron-up' : 'bi-chevron-down'}"></i> ${isPostExpanded ? 'Ocultar' : 'Editar'}
+              </button>
+            </div>
+            ${
+              hasRecording
+                ? `<div class="recording-preview">
+                    <button class="btn btn-pill rec-pill" data-open-recording="${meeting.id}"><span class="rec-dot"></span> REC</button>
+                    <span class="recording-label">Grabación cargada</span>
+                    <button class="btn btn-pill btn-ghost btn-subtle" data-open-recording="${meeting.id}"><i class="bi bi-box-arrow-up-right"></i> Abrir</button>
+                    <button class="btn btn-pill btn-ghost btn-subtle" data-copy-recording="${meeting.id}"><i class="bi bi-copy"></i> Copiar</button>
+                  </div>`
+                : '<span class="recording-empty"><i class="bi bi-camera-reels"></i> Sin grabación cargada</span>'
+            }
+            <div class="post-fields ${isPostExpanded ? '' : 'hidden'}">
+              <label>Link de grabación
+                <input type="url" name="recordingLink" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
+              </label>
+              <label>Comentario post reunión
+                <textarea rows="2" name="postComment" data-post-comment="${meeting.id}" placeholder="Notas finales...">${meeting.postComment || ''}</textarea>
+              </label>
+              <button class="btn btn-pill btn-soft" data-save-post="${meeting.id}"><i class="bi bi-save2"></i> Guardar post reunión</button>
+            </div>
           </div>`
         : ''
     }
@@ -474,6 +540,7 @@ function applyQuickFilter(rows) {
     if (activeQuickFilter === 'week') return start >= thisWeek.start && start <= thisWeek.end;
     if (activeQuickFilter === 'next_week') return start >= nextWeek.start && start <= nextWeek.end;
     if (activeQuickFilter === 'finished') return status === 'finished';
+    if (activeQuickFilter === 'recordings') return Boolean((m.recordingLink || '').trim());
     return true;
   });
 }
@@ -493,6 +560,7 @@ function updateQuickFilterCounts(rows) {
     week: 0,
     next_week: 0,
     finished: 0,
+    recordings: 0,
   };
 
   rows.forEach((meeting) => {
@@ -504,6 +572,7 @@ function updateQuickFilterCounts(rows) {
     if (start >= thisWeek.start && start <= thisWeek.end) counts.week += 1;
     if (start >= nextWeek.start && start <= nextWeek.end) counts.next_week += 1;
     if (status === 'finished') counts.finished += 1;
+    if ((meeting.recordingLink || '').trim()) counts.recordings += 1;
   });
 
   document.querySelectorAll('[data-count-filter]').forEach((el) => {
@@ -742,6 +811,8 @@ function resetMeetingForm({ keepOpen = false } = {}) {
   $('meetingDuration').value = '60';
   $('meetingNote').value = '';
   $('meetingLink').value = '';
+  $('notifySlack').checked = true;
+  $('slackReminderMinutes').value = '15';
   setSelectedIds('provider', new Set());
   setSelectedIds('participant', new Set());
   pickerUiState.provider.query = '';
@@ -817,6 +888,8 @@ async function onSaveMeeting() {
     participants: participants
       .filter((p) => selectedParticipantIds.includes(p.id))
       .map(({ id, name, lastName, email, initials: ini, color }) => ({ id, name, lastName, email, initials: ini, color })),
+    notifySlack: $('notifySlack').checked,
+    slackReminderMinutes: Number($('slackReminderMinutes').value || 15),
   };
 
   const overlaps = getOverlappingMeetings(startAt, payload.duration, editingMeetingId);
@@ -847,10 +920,31 @@ async function onSaveMeeting() {
     return;
   }
 
+  let meetingId = editingMeetingId;
   if (editingMeetingId) {
     await update(ref(rtdb, `meetings/${editingMeetingId}`), { ...payload, updatedAt: new Date().toISOString() });
   } else {
-    await saveCollectionItem('meetings', payload);
+    const createdRef = push(ref(rtdb, 'meetings'));
+    meetingId = createdRef.key;
+    await set(createdRef, { ...payload, createdAt: new Date().toISOString() });
+  }
+
+  if (payload.notifySlack) {
+    $('saveMeeting').disabled = true;
+    $('saveMeeting').innerHTML = '<span class="spinner mini"></span> Enviando a Slack...';
+    try {
+      await notifySlackViaAppScript(buildSlackPayload({ ...payload, id: meetingId }));
+    } catch (error) {
+      console.error(error);
+      await IOSSwal.fire({
+        icon: 'warning',
+        title: 'Reunión guardada',
+        text: 'No se pudo notificar a App Script/Slack. Verificá las URLs configuradas.',
+      });
+    } finally {
+      $('saveMeeting').disabled = false;
+      $('saveMeeting').innerHTML = editingMeetingId ? '<i class="bi bi-floppy"></i> Guardar cambios' : '<i class="bi bi-floppy"></i> Cargar evento';
+    }
   }
 
   resetMeetingForm();
@@ -867,13 +961,14 @@ function loadMeetingToForm(id) {
   $('meetingDuration').value = String(row.duration || 60);
   $('meetingNote').value = row.note || '';
   $('meetingLink').value = row.link || '';
+  $('notifySlack').checked = row.notifySlack !== false;
+  $('slackReminderMinutes').value = String(row.slackReminderMinutes || 15);
   setSelectedIds('provider', new Set((row.providers || []).map((p) => p.id)));
   setSelectedIds('participant', new Set((row.participants || []).map((p) => p.id)));
   editingMeetingId = id;
   $('cancelEdit').classList.remove('hidden');
   $('saveMeeting').innerHTML = '<i class="bi bi-floppy"></i> Guardar cambios';
   $('meetingFormSection').classList.remove('collapsed');
-  expandedPostMeetingIds.add(id);
   renderPickers();
 }
 
@@ -920,8 +1015,12 @@ async function finishMeetingNow(id) {
   try {
     await update(ref(rtdb, `meetings/${id}`), { duration: elapsedMin, updatedAt: new Date().toISOString() });
     await fetchMeetings();
+  } catch (error) {
+    console.error(error);
+    await IOSSwal.fire({ icon: 'error', title: 'No se pudo finalizar', text: 'Intentá nuevamente.' });
   } finally {
     pendingFinishMeetingIds.delete(id);
+    renderCurrentPage();
   }
 }
 
@@ -986,6 +1085,11 @@ function bindPickerEvents(type) {
   const container = $(containerId);
 
   container.addEventListener('click', (e) => {
+    const shell = e.target.closest(`[data-picker-shell="${type}"]`);
+    if (shell) {
+      pickerUiState[type].open = true;
+      syncPickerDropdownVisibility(type);
+    }
     const add = e.target.closest(`[data-add-${type}]`);
     const select = e.target.closest(`[data-select-${type}]`);
     const removeBtn = e.target.closest(`[data-remove-${type}]`);
@@ -1049,6 +1153,10 @@ function bindEvents() {
   });
   $('openProvidersModal').addEventListener('click', () => openProviderModal());
   $('openParticipantsModal').addEventListener('click', () => openParticipantModal());
+  $('openSlackConfigModal').addEventListener('click', () => {
+    loadSlackSettings();
+    $('slackConfigModal').showModal();
+  });
 
   $('cancelProvider').addEventListener('click', () => {
     $('providersModal').close();
@@ -1058,9 +1166,26 @@ function bindEvents() {
     $('participantsModal').close();
     resetParticipantForm();
   });
+  $('cancelSlackConfig').addEventListener('click', () => $('slackConfigModal').close());
 
   $('providersForm').addEventListener('submit', onSaveProvider);
   $('participantsForm').addEventListener('submit', onSaveParticipant);
+  $('slackConfigForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const webhookUrl = $('slackWebhookUrl').value.trim();
+    const appScriptUrl = $('appsScriptUrl').value.trim();
+    if (!webhookUrl || !appScriptUrl) return;
+    $('saveSlackConfig').disabled = true;
+    $('saveSlackConfig').innerHTML = '<span class="spinner mini"></span> Guardando...';
+    slackSettings.webhookUrl = webhookUrl;
+    slackSettings.appScriptUrl = appScriptUrl;
+    saveSlackSettings();
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    $('saveSlackConfig').disabled = false;
+    $('saveSlackConfig').textContent = 'Guardar';
+    $('slackConfigModal').close();
+    await IOSSwal.fire({ icon: 'success', title: 'Configuración guardada', timer: 1000, showConfirmButton: false });
+  });
   $('saveMeeting').addEventListener('click', onSaveMeeting);
   $('cancelEdit').addEventListener('click', () => resetMeetingForm());
   $('cancelCreateMeeting').addEventListener('click', async () => {
@@ -1148,6 +1273,8 @@ function bindEvents() {
     const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     const idSavePost = e.target.closest('[data-save-post]')?.dataset?.savePost;
     const idTogglePost = e.target.closest('[data-toggle-post]')?.dataset?.togglePost;
+    const idOpenRecording = e.target.closest('[data-open-recording]')?.dataset?.openRecording;
+    const idCopyRecording = e.target.closest('[data-copy-recording]')?.dataset?.copyRecording;
     if (idTogglePost) {
       if (expandedPostMeetingIds.has(idTogglePost)) expandedPostMeetingIds.delete(idTogglePost);
       else expandedPostMeetingIds.add(idTogglePost);
@@ -1168,6 +1295,14 @@ function bindEvents() {
     if (idCopySummary) {
       const row = filteredMeetings.find((m) => m.id === idCopySummary);
       if (row) await copyToClipboard(buildMeetingSummary(row), 'Resumen copiado para compartir por WhatsApp.');
+    }
+    if (idOpenRecording) {
+      const row = filteredMeetings.find((m) => m.id === idOpenRecording);
+      if (row?.recordingLink) window.open(row.recordingLink, '_blank', 'noopener,noreferrer');
+    }
+    if (idCopyRecording) {
+      const row = filteredMeetings.find((m) => m.id === idCopyRecording);
+      if (row?.recordingLink) await copyToClipboard(row.recordingLink, 'Link de grabación copiado.');
     }
     if (idSavePost) await savePostMeeting(idSavePost);
   });
@@ -1208,6 +1343,7 @@ function setupFlatpickr() {
   setNextMeetingCounterLoading(true);
   setupFlatpickr();
   bindEvents();
+  loadSlackSettings();
   await verifyRTDBAccess();
   await loadReferences();
   await refreshDateMeetCounts();

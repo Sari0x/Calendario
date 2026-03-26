@@ -1,10 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import {
-  equalTo,
   get,
   getDatabase,
   limitToFirst,
-  orderByChild,
   push,
   query,
   ref,
@@ -42,7 +40,7 @@ let filteredMeetings = [];
 let countdownInterval = null;
 let currentPage = 1;
 let totalPages = 1;
-let activeFilterDate = null;
+let activeFilterDateRange = null;
 let activeFilterProvider = '';
 let activeFilterParticipant = '';
 let activeQuickFilter = 'upcoming';
@@ -133,6 +131,7 @@ function parseLinkType(url) {
 }
 
 function meetingStatus(meeting) {
+  if (meeting.finishedAt) return 'finished';
   const now = new Date();
   const start = new Date(meeting.startAt);
   const end = new Date(start.getTime() + meeting.duration * 60000);
@@ -177,7 +176,7 @@ function countdownCompactLabel(startAt) {
   const now = new Date();
   const start = new Date(startAt);
   const diffMs = start - now;
-  if (diffMs <= 0) return 'inicia pronto';
+  if (diffMs <= 0) return '';
 
   const totalMinutes = Math.floor(diffMs / 60000);
   const days = Math.floor(totalMinutes / 1440);
@@ -186,6 +185,7 @@ function countdownCompactLabel(startAt) {
 
   if (days > 0) return `${days}d ${hours}h ${minutes}m`;
   if (hours > 0) return `${hours}h ${minutes}m`;
+  if (days === 0 && hours === 0 && minutes <= 0) return '';
   return `${minutes}m`;
 }
 
@@ -203,6 +203,11 @@ function toDateKeyLocal(dateObj) {
   const m = String(dateObj.getMonth() + 1).padStart(2, '0');
   const d = String(dateObj.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function inDateRange(dateKey, range) {
+  if (!range?.start || !range?.end) return true;
+  return dateKey >= range.start && dateKey <= range.end;
 }
 
 function normalizeSnapshot(snapshotVal) {
@@ -641,6 +646,16 @@ function renderCurrentPage() {
   startUiTicker();
 }
 
+function refreshLiveMeetingsView() {
+  const rows = [...baseMeetings];
+  updateQuickFilterCounts(rows);
+  filteredMeetings = sortMeetings(applyQuickFilter(rows));
+  if (currentPage > Math.max(Math.ceil(filteredMeetings.length / pageSize), 1)) {
+    currentPage = 1;
+  }
+  renderCurrentPage();
+}
+
 function startCountdowns() {
   if (countdownInterval) window.clearInterval(countdownInterval);
 
@@ -685,13 +700,14 @@ function updateTopIndicators() {
     .filter((m) => meetingStatus(m) !== 'finished' && new Date(m.startAt).getTime() > now)
     .sort((a, b) => new Date(a.startAt) - new Date(b.startAt))[0];
   const counter = $('nextMeetingCounter');
-  if (!nextMeeting) {
+  const compact = nextMeeting ? countdownCompactLabel(nextMeeting.startAt) : '';
+  if (!nextMeeting || !compact) {
     counter.classList.add('hidden');
     counter.textContent = '';
     return;
   }
   counter.classList.remove('hidden');
-  counter.innerHTML = `<i class="bi bi-alarm"></i> Próxima reunión en ${countdownCompactLabel(nextMeeting.startAt)}`;
+  counter.innerHTML = `<i class="bi bi-alarm"></i> Próxima reunión en ${compact}`;
 }
 
 function setNextMeetingCounterLoading(show) {
@@ -711,9 +727,9 @@ function setNextMeetingCounterLoading(show) {
 
 function startUiTicker() {
   if (uiTickerInterval) window.clearInterval(uiTickerInterval);
-  const tick = () => updateTopIndicators();
-  tick();
-  uiTickerInterval = window.setInterval(tick, 60000);
+  uiTickerInterval = window.setInterval(() => {
+    refreshLiveMeetingsView();
+  }, 60000);
 }
 
 async function loadReferences() {
@@ -728,12 +744,13 @@ async function fetchMeetings() {
   setNextMeetingCounterLoading(true);
   meetingsList.innerHTML = '';
   try {
-    let rows = [];
-    if (activeFilterDate) {
-      const snap = await get(query(ref(rtdb, 'meetings'), orderByChild('dateKey'), equalTo(activeFilterDate)));
-      rows = normalizeSnapshot(snap.val());
-    } else {
-      rows = await loadCollection('meetings');
+    let rows = await loadCollection('meetings');
+
+    if (activeFilterDateRange?.start && activeFilterDateRange?.end) {
+      rows = rows.filter((row) => {
+        const key = row.dateKey || toDateKeyLocal(new Date(row.startAt));
+        return inDateRange(key, activeFilterDateRange);
+      });
     }
 
     if (activeFilterProvider) {
@@ -750,7 +767,14 @@ async function fetchMeetings() {
     renderCurrentPage();
   } catch (error) {
     showNotice('No se pudieron cargar reuniones desde Realtime Database.');
-    meetingsList.innerHTML = '<p>No se pudieron cargar reuniones.</p>';
+    meetingsList.innerHTML = `<div class="meetings-error-state">
+      <i class="bi bi-wifi-off meetings-error-icon"></i>
+      <h3>No se pudieron cargar reuniones</h3>
+      <p>Revisá la conexión o intentá nuevamente.</p>
+      <button class="btn btn-pill btn-primary" data-retry-fetch>
+        <i class="bi bi-arrow-clockwise"></i> Reintentar
+      </button>
+    </div>`;
     console.error(error);
   } finally {
     showSpinner(false);
@@ -1066,7 +1090,11 @@ async function finishMeetingNow(id) {
   pendingFinishMeetingIds.add(id);
   renderCurrentPage();
   try {
-    await update(ref(rtdb, `meetings/${id}`), { duration: elapsedMin, updatedAt: new Date().toISOString() });
+    await update(ref(rtdb, `meetings/${id}`), {
+      duration: elapsedMin,
+      finishedAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    });
     await fetchMeetings();
   } catch (error) {
     console.error(error);
@@ -1193,6 +1221,12 @@ function bindPickerEvents(type) {
 }
 
 function bindEvents() {
+  document.querySelectorAll('.brand-logo').forEach((logo) => {
+    logo.addEventListener('click', () => {
+      window.location.href = './index.html';
+    });
+  });
+
   $('openMeetingForm').addEventListener('click', async () => {
     const isCollapsed = $('meetingFormSection').classList.contains('collapsed');
     if (isCollapsed) {
@@ -1285,7 +1319,7 @@ function bindEvents() {
 
   $('clearFilter').addEventListener('click', async () => {
     $('filterDate')._flatpickr?.clear();
-    activeFilterDate = null;
+    activeFilterDateRange = null;
     activeFilterProvider = '';
     activeFilterParticipant = '';
     $('filterProvider').value = '';
@@ -1327,6 +1361,10 @@ function bindEvents() {
   $('scrollDownBtn').addEventListener('click', () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
 
   meetingsList.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-retry-fetch]')) {
+      await fetchMeetings();
+      return;
+    }
     const idRes = e.target.closest('[data-reschedule]')?.dataset?.reschedule;
     const idEdit = e.target.closest('[data-edit]')?.dataset?.edit;
     const idDelete = e.target.closest('[data-delete]')?.dataset?.delete;
@@ -1380,11 +1418,22 @@ function setupFlatpickr() {
   });
   flatpickr('#filterDate', {
     locale: 'es',
+    mode: 'range',
     altInput: true,
-    altFormat: 'l, j \\d\\e F \\d\\e Y',
+    altFormat: 'j M Y',
     dateFormat: 'Y-m-d',
-    onChange: async (_, dateStr) => {
-      activeFilterDate = dateStr || null;
+    onChange: async (selectedDates) => {
+      if (selectedDates.length === 2) {
+        const [from, to] = selectedDates;
+        const start = toDateKeyLocal(from <= to ? from : to);
+        const end = toDateKeyLocal(from <= to ? to : from);
+        activeFilterDateRange = { start, end };
+      } else if (selectedDates.length === 1) {
+        const single = toDateKeyLocal(selectedDates[0]);
+        activeFilterDateRange = { start: single, end: single };
+      } else {
+        activeFilterDateRange = null;
+      }
       currentPage = 1;
       await fetchMeetings();
     },

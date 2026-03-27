@@ -968,15 +968,12 @@ function renderTodoTaskRows(tasks = []) {
 function initTodoTaskDatePickers() {
   document.querySelectorAll('#todoTaskRows input[data-task-field="startDate"], #todoTaskRows input[data-task-field="endDate"]').forEach((input) => {
     if (input._flatpickr) return;
-    const todoModal = input.closest('#todoModal');
     flatpickr(input, {
       locale: 'es',
       dateFormat: 'Y-m-d',
       allowInput: true,
       disableMobile: true,
-      appendTo: todoModal || document.body,
-      positionElement: input,
-      position: 'auto left',
+      static: true,
     });
   });
 }
@@ -1315,9 +1312,7 @@ async function editTodoTask(todoId, taskIndex) {
           dateFormat: 'Y-m-d',
           allowInput: true,
           disableMobile: true,
-          appendTo: popup,
-          positionElement: startInput,
-          position: 'auto left',
+          static: true,
         });
       }
       if (endInput && !endInput._flatpickr) {
@@ -1326,9 +1321,7 @@ async function editTodoTask(todoId, taskIndex) {
           dateFormat: 'Y-m-d',
           allowInput: true,
           disableMobile: true,
-          appendTo: popup,
-          positionElement: endInput,
-          position: 'auto left',
+          static: true,
         });
       }
     },

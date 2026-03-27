@@ -1105,11 +1105,24 @@ textarea {
 .task-form-row .flatpickr-wrapper,
 .sw-task-dates .flatpickr-wrapper {
   position: relative;
+  z-index: 20;
 }
 
 .task-form-row .flatpickr-calendar,
 .sw-task-dates .flatpickr-calendar {
-  z-index: 100005 !important;
+  z-index: 100010 !important;
+}
+
+.sw-task-form,
+.sw-task-dates,
+.sw-task-dates > div {
+  position: relative;
+  overflow: visible;
+}
+
+.swal-ios .swal2-actions {
+  position: relative;
+  z-index: 5;
 }
 
 .task-form-row {

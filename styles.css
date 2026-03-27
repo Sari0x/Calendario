@@ -72,6 +72,27 @@ p {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hub-folders {
+  display: flex;
+  gap: 8px;
+}
+
+.folder-tab {
+  border: 1px solid #4a4a78;
+  background: rgba(255, 255, 255, 0.1);
+  color: #eef0ff;
+  border-radius: 12px 12px 0 0;
+  padding: 8px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.folder-tab.active {
+  background: #f8f7ff;
+  color: #2b2a4c;
 }
 
 .brand-logo {
@@ -86,6 +107,10 @@ p {
   margin-top: 12px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.todo-back-wrap {
+  margin-top: 10px;
 }
 
 .menu-separator {
@@ -165,6 +190,16 @@ label {
 
 input,
 textarea {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 11px 12px;
+  font-size: 14px;
+  color: var(--text);
+  background: #fff;
+  outline: none;
+}
+
+select {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 11px 12px;
@@ -368,6 +403,13 @@ textarea {
   flex-wrap: wrap;
 }
 
+.playlist-inline-wrap {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .filter select {
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -566,6 +608,14 @@ textarea {
 
 .badge.nearest {
   background: #3b356f;
+}
+
+.badge.playlist {
+  background: #175383;
+}
+
+.badge.overdue {
+  background: #a62a2a;
 }
 
 .meeting-duration,
@@ -847,7 +897,71 @@ textarea {
 }
 
 .hidden {
-  display: none;
+  display: none !important;
+}
+
+.todo-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.todo-item {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.todo-item.is-overdue {
+  border-color: #f1a4a4;
+  box-shadow: 0 0 0 1px #ffd4d4;
+}
+
+.todo-cover {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+}
+
+.todo-main {
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.todo-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.todo-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.todo-checks {
+  display: grid;
+  gap: 6px;
+}
+
+.todo-check {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  color: var(--text);
+}
+
+.todo-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 @keyframes spin {

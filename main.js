@@ -36,6 +36,8 @@ const headerActionButtons = Array.from(document.querySelectorAll('.menu-actions 
 
 let providers = [];
 let participants = [];
+let playlists = [];
+let todos = [];
 let meetings = [];
 let filteredMeetings = [];
 let countdownInterval = null;
@@ -44,11 +46,15 @@ let totalPages = 1;
 let activeFilterDateRange = null;
 let activeFilterProvider = '';
 let activeFilterParticipant = '';
+let activeFilterPlaylist = '';
 let activeQuickFilter = 'upcoming';
+let activeSection = 'hub';
 let editingMeetingId = null;
 let editingMeetingOriginalStartAt = null;
 let editingProviderId = null;
 let editingParticipantId = null;
+let editingPlaylistId = null;
+let editingTodoId = null;
 let nearestMeetingId = null;
 let uiTickerInterval = null;
 const pendingFinishMeetingIds = new Set();
@@ -432,6 +438,15 @@ function renderCreatedLists() {
         )
         .join('')
     : '<small>Sin participantes creados.</small>';
+
+  $('playlistsCreatedList').innerHTML = playlists.length
+    ? playlists
+        .map(
+          (p) =>
+            `<div class="created-item"><span class="name"><strong>${p.name}</strong><small>${p.description || ''}</small></span><button class="btn btn-ghost btn-xs" data-edit-playlist="${p.id}">Editar</button><button class="btn btn-ghost btn-xs" data-delete-playlist="${p.id}">Eliminar</button></div>`,
+        )
+        .join('')
+    : '<small>Sin listas creadas.</small>';
 }
 
 function resetProviderForm() {
@@ -447,6 +462,13 @@ function resetParticipantForm() {
   $('participantsForm').reset();
   $('participantsForm').querySelector('h3').textContent = 'Nuevo participante';
   $('saveParticipant').textContent = 'Guardar';
+}
+
+function resetPlaylistForm() {
+  editingPlaylistId = null;
+  $('playlistsForm').reset();
+  $('playlistsForm').querySelector('h3').textContent = 'Nueva lista de reproducción';
+  $('savePlaylist').textContent = 'Guardar';
 }
 
 function openProviderModal(editId = null) {
@@ -480,6 +502,22 @@ function openParticipantModal(editId = null) {
     }
   }
   $('participantsModal').showModal();
+}
+
+function openPlaylistsModal(editId = null) {
+  resetPlaylistForm();
+  renderCreatedLists();
+  if (editId) {
+    const row = playlists.find((p) => p.id === editId);
+    if (row) {
+      editingPlaylistId = editId;
+      $('playlistName').value = row.name || '';
+      $('playlistDescription').value = row.description || '';
+      $('playlistsForm').querySelector('h3').textContent = 'Editar lista de reproducción';
+      $('savePlaylist').textContent = 'Actualizar';
+    }
+  }
+  $('playlistsModal').showModal();
 }
 
 function statusMeta(status) {
@@ -518,6 +556,9 @@ function meetingCard(meeting) {
   const isFinishing = pendingFinishMeetingIds.has(meeting.id);
   const isPostExpanded = expandedPostMeetingIds.has(meeting.id);
   const hasRecording = Boolean((meeting.recordingLink || '').trim());
+  const playlistBadge = meeting.playlistName
+    ? `<span class="badge playlist"><i class="bi bi-collection-play"></i> ${meeting.playlistName}</span>`
+    : '';
 
   return `<article class="meeting-item status-${meta.cls} ${isFinished ? 'disabled' : ''} ${isNearest ? 'is-nearest' : ''}">
     <div class="meeting-top">
@@ -525,6 +566,7 @@ function meetingCard(meeting) {
       <div class="top-badges">
         ${isNearest ? '<span class="badge nearest"><i class="bi bi-stars"></i> Próximo meet</span>' : ''}
         <span class="badge ${meta.cls}"><i class="bi ${meta.icon}"></i>${meta.text ? ` ${meta.text}` : ''}</span>
+        ${playlistBadge}
       </div>
     </div>
 
@@ -731,8 +773,15 @@ function renderFilterOptions() {
   $('filterParticipant').innerHTML = `<option value="">Participante</option>${participants
     .map((p) => `<option value="${p.id}">${p.name} ${p.lastName}</option>`)
     .join('')}`;
+  $('filterPlaylist').innerHTML = `<option value="">Lista de reproducción</option>${playlists
+    .map((p) => `<option value="${p.id}">${p.name}</option>`)
+    .join('')}`;
+  $('meetingPlaylistSelect').innerHTML = `<option value="">Sin lista de reproducción</option>${playlists
+    .map((p) => `<option value="${p.id}">${p.name}</option>`)
+    .join('')}`;
   $('filterProvider').value = activeFilterProvider;
   $('filterParticipant').value = activeFilterParticipant;
+  $('filterPlaylist').value = activeFilterPlaylist;
 }
 
 function updateTopIndicators() {
@@ -783,15 +832,75 @@ function startUiTicker() {
   if (uiTickerInterval) window.clearInterval(uiTickerInterval);
   uiTickerInterval = window.setInterval(() => {
     refreshLiveMeetingsView();
+    renderTodoList();
   }, 60000);
 }
 
+function getTodoProgress(todo) {
+  const items = todo.items || [];
+  if (!items.length) return 0;
+  const done = items.filter((item) => item.done).length;
+  return Math.round((done / items.length) * 100);
+}
+
+function isTodoOverdue(todo) {
+  if (!todo.dueDate) return false;
+  if (todo.completed || todo.reactivated) return false;
+  const due = new Date(`${todo.dueDate}T23:59:59`);
+  return Date.now() > due.getTime();
+}
+
+function todoCard(todo) {
+  const progress = getTodoProgress(todo);
+  const overdue = isTodoOverdue(todo);
+  return `<article class="todo-item ${overdue ? 'is-overdue' : ''}">
+    ${todo.cover ? `<img class="todo-cover" src="${todo.cover}" alt="${todo.title}" />` : ''}
+    <div class="todo-main">
+      <div class="todo-top"><strong>${todo.title}</strong>${overdue ? '<span class="badge overdue"><i class="bi bi-exclamation-triangle"></i> Vencido</span>' : ''}</div>
+      <div class="todo-meta">
+        <span><i class="bi bi-calendar-event"></i> ${todo.dueDate || 'Sin fecha límite'}</span>
+        <span><i class="bi bi-list-task"></i> ${todo.items?.length || 0} ítems</span>
+        ${todo.type === 'progress' ? `<span><i class="bi bi-graph-up"></i> ${progress}%</span>` : ''}
+      </div>
+      <div class="todo-checks">
+        ${(todo.items || [])
+          .map(
+            (item, idx) =>
+              `<label class="todo-check"><input type="checkbox" data-todo-item="${todo.id}" data-item-index="${idx}" ${item.done ? 'checked' : ''} /> ${item.text}</label>`,
+          )
+          .join('')}
+      </div>
+      <div class="todo-actions">
+        ${overdue ? `<button class="btn btn-pill btn-soft" data-reactivate-todo="${todo.id}"><i class="bi bi-arrow-clockwise"></i> Reactivar</button>` : ''}
+        <button class="btn btn-pill btn-ghost btn-subtle" data-delete-todo="${todo.id}"><i class="bi bi-trash3"></i> Eliminar</button>
+      </div>
+    </div>
+  </article>`;
+}
+
+function renderTodoList() {
+  const list = $('todoList');
+  if (!list) return;
+  list.innerHTML = todos.length ? todos.map(todoCard).join('') : '<p>No hay checklist creados.</p>';
+}
+
 async function loadReferences() {
-  const [loadedProviders, loadedParticipants] = await Promise.all([loadCollection('providers'), loadCollection('participants')]);
+  const [loadedProviders, loadedParticipants, loadedPlaylists, loadedTodos] = await Promise.all([
+    loadCollection('providers'),
+    loadCollection('participants'),
+    loadCollection('playlists'),
+    loadCollection('todos'),
+  ]);
   providers = loadedProviders;
   participants = loadedParticipants;
+  playlists = loadedPlaylists;
+  todos = loadedTodos.map((todo) => ({
+    ...todo,
+    items: Array.isArray(todo.items) ? todo.items : [],
+  }));
   renderFilterOptions();
   renderPickers();
+  renderTodoList();
 }
 
 async function fetchMeetings({ forceRefresh = false } = {}) {
@@ -815,6 +924,9 @@ async function fetchMeetings({ forceRefresh = false } = {}) {
     if (activeFilterParticipant) {
       rows = rows.filter((row) => (row.participants || []).some((p) => p.id === activeFilterParticipant));
     }
+    if (activeFilterPlaylist) {
+      rows = rows.filter((row) => row.playlistId === activeFilterPlaylist);
+    }
 
     baseMeetings = [...rows];
     updateQuickFilterCounts(rows);
@@ -832,6 +944,7 @@ async function fetchMeetings({ forceRefresh = false } = {}) {
     </div>`;
     console.error(error);
   } finally {
+    $('filterPlaylist').classList.toggle('hidden', activeQuickFilter !== 'recordings');
     showSpinner(false);
     setNextMeetingCounterLoading(false);
   }
@@ -913,6 +1026,81 @@ async function onSaveParticipant(e) {
   await loadReferences();
 }
 
+async function onSavePlaylist(e) {
+  e.preventDefault();
+  const name = $('playlistName').value.trim();
+  const description = $('playlistDescription').value.trim();
+  if (!name) return;
+  if (editingPlaylistId) {
+    await update(ref(rtdb, `playlists/${editingPlaylistId}`), { name, description, updatedAt: new Date().toISOString() });
+  } else {
+    await saveCollectionItem('playlists', { name, description });
+  }
+  $('playlistsModal').close();
+  resetPlaylistForm();
+  await loadReferences();
+}
+
+async function deletePlaylist(id) {
+  const result = await IOSSwal.fire({
+    title: '¿Estas seguro?',
+    text: 'Se eliminará la lista de reproducción.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+  });
+  if (!result.isConfirmed) return;
+  await remove(ref(rtdb, `playlists/${id}`));
+  await loadReferences();
+  await fetchMeetings({ forceRefresh: true });
+}
+
+async function onSaveTodo(e) {
+  e.preventDefault();
+  const title = $('todoTitle').value.trim();
+  const type = $('todoType').value;
+  const cover = $('todoCover').value.trim();
+  const dueDate = $('todoDueDate').value;
+  const items = $('todoItems')
+    .value.split('\n')
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .map((text) => ({ text, done: false }));
+  if (!title) return;
+  const payload = { title, type, cover, dueDate, items, reactivated: false };
+  if (editingTodoId) {
+    await update(ref(rtdb, `todos/${editingTodoId}`), { ...payload, updatedAt: new Date().toISOString() });
+  } else {
+    await saveCollectionItem('todos', payload);
+  }
+  $('todoModal').close();
+  editingTodoId = null;
+  $('todoForm').reset();
+  await loadReferences();
+}
+
+function switchSection(section) {
+  activeSection = section;
+  const isHub = section === 'hub';
+  $('folderNovoHub').classList.toggle('active', isHub);
+  $('folderTodoNovo').classList.toggle('active', !isHub);
+  $('folderNovoHub').setAttribute('aria-selected', String(isHub));
+  $('folderTodoNovo').setAttribute('aria-selected', String(!isHub));
+  $('meetingFormSection').classList.toggle('hidden', !isHub);
+  $('meetingsSection').classList.toggle('hidden', !isHub);
+  $('todoSection').classList.toggle('hidden', isHub);
+  $('nextMeetingCounter').classList.toggle('hidden', !isHub || !$('nextMeetingCounter').textContent.trim());
+  $('todoBackWrap').classList.toggle('hidden', isHub);
+  $('openMeetingForm').classList.toggle('hidden', !isHub);
+  $('openProvidersModal').classList.toggle('hidden', !isHub);
+  $('openParticipantsModal').classList.toggle('hidden', !isHub);
+  $('openPlaylistsModal').classList.toggle('hidden', !isHub);
+  $('openSlackConfigModal').classList.toggle('hidden', !isHub);
+  document.querySelector('.menu-separator')?.classList.toggle('hidden', !isHub);
+  renderTodoList();
+}
+
 function resetMeetingForm({ keepOpen = false } = {}) {
   $('meetingDate').value = '';
   $('meetingDate')._flatpickr?.clear();
@@ -922,6 +1110,7 @@ function resetMeetingForm({ keepOpen = false } = {}) {
   $('meetingLink').value = '';
   $('notifySlack').checked = true;
   $('slackReminderMinutes').value = '15';
+  $('meetingPlaylistSelect').value = '';
   setSelectedIds('provider', new Set());
   setSelectedIds('participant', new Set());
   pickerUiState.provider.query = '';
@@ -943,6 +1132,7 @@ function hasMeetingDraft() {
       $('meetingNote').value.trim() ||
       $('meetingLink').value.trim() ||
       Number($('meetingDuration').value || 60) !== 60 ||
+      $('meetingPlaylistSelect').value ||
       getSelectedIds('provider').size ||
       getSelectedIds('participant').size,
   );
@@ -1001,6 +1191,8 @@ async function onSaveMeeting() {
 
   const selectedProviderIds = [...getSelectedIds('provider')];
   const selectedParticipantIds = [...getSelectedIds('participant')];
+  const selectedPlaylistId = $('meetingPlaylistSelect').value;
+  const selectedPlaylist = playlists.find((p) => p.id === selectedPlaylistId);
 
   const payload = {
     startAt: startAt.toISOString(),
@@ -1012,6 +1204,8 @@ async function onSaveMeeting() {
     participants: participants
       .filter((p) => selectedParticipantIds.includes(p.id))
       .map(({ id, name, lastName, email, initials: ini, color }) => ({ id, name, lastName, email, initials: ini, color })),
+    playlistId: selectedPlaylist?.id || '',
+    playlistName: selectedPlaylist?.name || '',
     notifySlack: $('notifySlack').checked,
     slackReminderMinutes: Number($('slackReminderMinutes').value || 15),
   };
@@ -1103,6 +1297,7 @@ function loadMeetingToForm(id) {
   $('meetingLink').value = row.link || '';
   $('notifySlack').checked = row.notifySlack !== false;
   $('slackReminderMinutes').value = String(row.slackReminderMinutes || 15);
+  $('meetingPlaylistSelect').value = row.playlistId || '';
   setSelectedIds('provider', new Set((row.providers || []).map((p) => p.id)));
   setSelectedIds('participant', new Set((row.participants || []).map((p) => p.id)));
   editingMeetingId = id;
@@ -1305,6 +1500,8 @@ function bindEvents() {
   });
   $('openProvidersModal').addEventListener('click', () => openProviderModal());
   $('openParticipantsModal').addEventListener('click', () => openParticipantModal());
+  $('openPlaylistsModal').addEventListener('click', () => openPlaylistsModal());
+  $('addPlaylistInline').addEventListener('click', () => openPlaylistsModal());
   $('openSlackConfigModal').addEventListener('click', async () => {
     await loadSlackSettings();
     $('slackConfigModal').showModal();
@@ -1318,10 +1515,21 @@ function bindEvents() {
     $('participantsModal').close();
     resetParticipantForm();
   });
+  $('cancelPlaylist').addEventListener('click', () => {
+    $('playlistsModal').close();
+    resetPlaylistForm();
+  });
   $('cancelSlackConfig').addEventListener('click', () => $('slackConfigModal').close());
+  $('cancelTodo').addEventListener('click', () => {
+    $('todoModal').close();
+    editingTodoId = null;
+    $('todoForm').reset();
+  });
 
   $('providersForm').addEventListener('submit', onSaveProvider);
   $('participantsForm').addEventListener('submit', onSaveParticipant);
+  $('playlistsForm').addEventListener('submit', onSavePlaylist);
+  $('todoForm').addEventListener('submit', onSaveTodo);
   $('slackConfigForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const webhookUrl = $('slackWebhookUrl').value.trim();
@@ -1346,6 +1554,7 @@ function bindEvents() {
     await IOSSwal.fire({ icon: 'success', title: 'Configuración guardada', timer: 1000, showConfirmButton: false });
   });
   $('saveMeeting').addEventListener('click', onSaveMeeting);
+  $('openTodoModal').addEventListener('click', () => $('todoModal').showModal());
   $('cancelEdit').addEventListener('click', () => resetMeetingForm());
   $('cancelCreateMeeting').addEventListener('click', async () => {
     if (hasMeetingDraft()) {
@@ -1380,14 +1589,22 @@ function bindEvents() {
     if (idEdit) openParticipantModal(idEdit);
     if (idDelete) await deleteParticipant(idDelete);
   });
+  $('playlistsCreatedList').addEventListener('click', async (e) => {
+    const idDelete = e.target?.dataset?.deletePlaylist;
+    const idEdit = e.target?.dataset?.editPlaylist;
+    if (idEdit) openPlaylistsModal(idEdit);
+    if (idDelete) await deletePlaylist(idDelete);
+  });
 
   $('clearFilter').addEventListener('click', async () => {
     $('filterDate')._flatpickr?.clear();
     activeFilterDateRange = null;
     activeFilterProvider = '';
     activeFilterParticipant = '';
+    activeFilterPlaylist = '';
     $('filterProvider').value = '';
     $('filterParticipant').value = '';
+    $('filterPlaylist').value = '';
     currentPage = 1;
     await fetchMeetings();
   });
@@ -1401,16 +1618,29 @@ function bindEvents() {
     currentPage = 1;
     await fetchMeetings();
   });
+  $('filterPlaylist').addEventListener('change', async (e) => {
+    activeFilterPlaylist = e.target.value;
+    currentPage = 1;
+    await fetchMeetings();
+  });
 
   $('quickFilters').addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-filter]');
     if (!btn) return;
     activeQuickFilter = btn.dataset.filter;
+    if (activeQuickFilter !== 'recordings') {
+      activeFilterPlaylist = '';
+      $('filterPlaylist').value = '';
+    }
     currentPage = 1;
     document.querySelectorAll('.quick-filter').forEach((item) => item.classList.toggle('active', item === btn));
     btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
     await fetchMeetings();
   });
+
+  $('folderNovoHub').addEventListener('click', () => switchSection('hub'));
+  $('folderTodoNovo').addEventListener('click', () => switchSection('todo'));
+  $('backToNovoHub').addEventListener('click', () => switchSection('hub'));
 
   $('prevPage').addEventListener('click', async () => {
     if (currentPage > 1) currentPage -= 1;
@@ -1470,6 +1700,34 @@ function bindEvents() {
     }
     if (idSavePost) await savePostMeeting(idSavePost);
   });
+
+  $('todoList').addEventListener('click', async (e) => {
+    const deleteId = e.target.closest('[data-delete-todo]')?.dataset?.deleteTodo;
+    const reactivateId = e.target.closest('[data-reactivate-todo]')?.dataset?.reactivateTodo;
+    if (deleteId) {
+      await remove(ref(rtdb, `todos/${deleteId}`));
+      await loadReferences();
+      return;
+    }
+    if (reactivateId) {
+      await update(ref(rtdb, `todos/${reactivateId}`), { reactivated: true, updatedAt: new Date().toISOString() });
+      await loadReferences();
+    }
+  });
+
+  $('todoList').addEventListener('change', async (e) => {
+    const todoId = e.target?.dataset?.todoItem;
+    const itemIndex = Number(e.target?.dataset?.itemIndex);
+    if (!todoId || Number.isNaN(itemIndex)) return;
+    const todo = todos.find((row) => row.id === todoId);
+    if (!todo) return;
+    const items = [...(todo.items || [])];
+    if (!items[itemIndex]) return;
+    items[itemIndex] = { ...items[itemIndex], done: e.target.checked };
+    const completed = items.length > 0 && items.every((item) => item.done);
+    await update(ref(rtdb, `todos/${todoId}`), { items, completed, reactivated: false, updatedAt: new Date().toISOString() });
+    await loadReferences();
+  });
 }
 
 function setupFlatpickr() {
@@ -1520,6 +1778,7 @@ function setupFlatpickr() {
   try {
     setupFlatpickr();
     bindEvents();
+    switchSection('hub');
     await verifyRTDBAccess();
     await Promise.all([loadSlackSettings(), loadReferences(), fetchMeetings({ forceRefresh: true })]);
   } catch (error) {

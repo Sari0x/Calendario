@@ -26,10 +26,13 @@
   <body>
     <header class="topbar glass">
       <div class="brand-wrap">
-        <img src="img/Novo%20Hub%20Logo.png" alt="Novo Hub" class="brand-logo" />
         <div class="hub-folders" role="tablist" aria-label="Secciones">
-          <button id="folderNovoHub" class="folder-tab active" role="tab" aria-selected="true">Novo Hub</button>
-          <button id="folderTodoNovo" class="folder-tab" role="tab" aria-selected="false">To Do Novo</button>
+          <button id="folderNovoHub" class="folder-logo-btn active" role="tab" aria-selected="true" type="button" title="Ir a Novo Hub">
+            <img src="img/Novo%20Hub%20Logo.png" alt="Novo Hub" class="brand-logo folder-logo" />
+          </button>
+          <button id="folderTodoNovo" class="folder-logo-btn" role="tab" aria-selected="false" type="button" title="Ir a Novo To Do">
+            <img src="https://i.postimg.cc/xCSg6ChQ/Novo-To-Do.png" alt="Novo To Do" class="brand-logo folder-logo" />
+          </button>
         </div>
         <div id="nextMeetingCounter" class="next-meeting-counter hidden"></div>
       </div>
@@ -128,7 +131,7 @@
 
       <section id="todoSection" class="card glass hidden">
         <div class="card-header wrap">
-          <h2><i class="bi bi-list-check"></i> To Do Novo</h2>
+          <h2><i class="bi bi-list-check"></i> Novo To Do</h2>
           <button id="openTodoModal" class="btn btn-pill btn-primary"><i class="bi bi-plus-circle"></i> Nuevo checklist</button>
         </div>
         <div id="todoList" class="todo-list"></div>
@@ -226,6 +229,7 @@
           <button id="addTodoTaskRow" type="button" class="btn btn-pill btn-ghost"><i class="bi bi-plus-lg"></i> Agregar tarea</button>
         </div>
         <p class="sub">Cada tarea tiene fecha desde/hasta. El módulo recalcula su % automáticamente por tareas realizadas o vencidas.</p>
+        <p id="todoInlineMessage" class="sub todo-inline-message hidden"></p>
         <div class="modal-actions">
           <button type="button" id="cancelTodo" class="btn btn-pill btn-ghost">Cancelar</button>
           <button type="submit" id="saveTodo" class="btn btn-pill btn-primary">Guardar</button>

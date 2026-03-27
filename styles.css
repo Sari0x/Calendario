@@ -104,7 +104,7 @@ p {
 .folder-logo {
   display: block;
   width: 150px;
-  max-height: 40px;
+  max-height: 60px;
 }
 
 .menu-actions {
@@ -1064,6 +1064,7 @@ textarea {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  margin-top: 8px;
 }
 
 .todo-pagination {

@@ -28,8 +28,8 @@
       <div class="brand-wrap">
         <img src="img/Novo%20Hub%20Logo.png" alt="Novo Hub" class="brand-logo" />
         <div class="hub-folders" role="tablist" aria-label="Secciones">
-          <button id="folderNovoHub" class="folder-tab active" role="tab" aria-selected="true"><img src="img/Novo%20Hub%20Logo.png" alt="Novo Hub" class="folder-logo" /></button>
-          <button id="folderTodoNovo" class="folder-tab" role="tab" aria-selected="false"><span class="folder-todo-logo"><i class="bi bi-check2-square"></i> Novo To Do</span></button>
+          <button id="folderNovoHub" class="folder-tab active" role="tab" aria-selected="true">Novo Hub</button>
+          <button id="folderTodoNovo" class="folder-tab" role="tab" aria-selected="false">To Do Novo</button>
         </div>
         <div id="nextMeetingCounter" class="next-meeting-counter hidden"></div>
       </div>
@@ -128,7 +128,7 @@
 
       <section id="todoSection" class="card glass hidden">
         <div class="card-header wrap">
-          <h2><i class="bi bi-list-check"></i> Novo To Do</h2>
+          <h2><i class="bi bi-list-check"></i> To Do Novo</h2>
           <button id="openTodoModal" class="btn btn-pill btn-primary"><i class="bi bi-plus-circle"></i> Nuevo checklist</button>
         </div>
         <div id="todoList" class="todo-list"></div>
@@ -205,7 +205,6 @@
     <dialog id="todoModal" class="modal">
       <form id="todoForm" class="modal-content">
         <h3>Nuevo módulo To Do</h3>
-        <div id="todoModalNotice" class="inline-notice hidden"></div>
         <label>Módulo <input id="todoTitle" type="text" required placeholder="Ej: Softland integración" /></label>
         <label>Portada (URL imagen)
           <input id="todoCover" type="url" placeholder="https://..." />

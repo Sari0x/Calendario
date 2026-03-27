@@ -1101,6 +1101,16 @@ textarea {
   width: 100%;
 }
 
+.task-form-row .flatpickr-wrapper,
+.sw-task-dates .flatpickr-wrapper {
+  position: relative;
+}
+
+.task-form-row .flatpickr-calendar,
+.sw-task-dates .flatpickr-calendar {
+  z-index: 100005 !important;
+}
+
 .task-form-row {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 160px 160px auto;

@@ -55,6 +55,7 @@ let editingProviderId = null;
 let editingParticipantId = null;
 let editingPlaylistId = null;
 let editingTodoId = null;
+let expandedTodoId = null;
 const todoTaskPageMap = new Map();
 let nearestMeetingId = null;
 let uiTickerInterval = null;
@@ -883,10 +884,20 @@ function todoCard(todo) {
   const currentPage = Math.min(todoTaskPageMap.get(todo.id) || 1, totalPages);
   const start = (currentPage - 1) * perPage;
   const visibleTasks = (todo.tasks || []).slice(start, start + perPage);
+  const isExpanded = expandedTodoId === todo.id;
+
   return `<article class="todo-item ${hasOverdue ? 'is-overdue' : ''}">
     ${todo.cover ? `<img class="todo-cover" src="${todo.cover}" alt="${todo.title}" />` : ''}
     <div class="todo-main">
-      <div class="todo-top"><strong>${todo.title}</strong>${completed ? '<span class="badge finished"><i class="bi bi-check2-circle"></i> Completado</span>' : ''}</div>
+      <div class="todo-top">
+        <strong>${todo.title}</strong>
+        <div class="todo-top-actions">
+          ${completed ? '<span class="badge finished"><i class="bi bi-check2-circle"></i> Completado</span>' : ''}
+          <button class="btn btn-pill btn-ghost btn-subtle" type="button" data-toggle-todo="${todo.id}">
+            <i class="bi ${isExpanded ? 'bi-chevron-up' : 'bi-chevron-down'}"></i> ${isExpanded ? 'Ocultar' : 'Abrir'}
+          </button>
+        </div>
+      </div>
       <div class="todo-meta">
         <span><i class="bi bi-list-task"></i> ${totalTasks} tareas</span>
         <span><i class="bi bi-check2-square"></i> ${completedTasks}/${totalTasks} avanzadas</span>
@@ -895,36 +906,40 @@ function todoCard(todo) {
       <div class="todo-progress">
         <div class="todo-progress-bar" style="width:${progress}%"></div>
       </div>
-      <div class="todo-checks">
-        ${visibleTasks
-          .map(
-            (task, idx) => `<div class="todo-task-row ${isTaskOverdue(task) ? 'is-overdue' : ''}">
-              <label class="todo-check">
-                <input type="checkbox" data-todo-task="${todo.id}" data-task-index="${start + idx}" ${task.done ? 'checked' : ''} />
-                <span>${task.title}</span>
-              </label>
-              <div class="todo-task-dates">
-                <span><i class="bi bi-calendar-range"></i> ${task.startDate || 'Sin desde'} → ${task.endDate || 'Sin hasta'}</span>
-              </div>
-              <div class="todo-task-actions">
-                ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
-                <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todo.id}" data-task-index="${start + idx}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
-              </div>
-            </div>`,
-          )
-          .join('')}
-      </div>
-      ${
-        totalPages > 1
-          ? `<div class="todo-pagination">
-              <button class="btn btn-pill btn-ghost btn-subtle" data-todo-page-prev="${todo.id}" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
-              <span>Página ${currentPage} de ${totalPages}</span>
-              <button class="btn btn-pill btn-ghost btn-subtle" data-todo-page-next="${todo.id}" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
-            </div>`
-          : ''
-      }
-      <div class="todo-actions">
-        <button class="btn btn-pill btn-ghost btn-subtle" data-delete-todo="${todo.id}"><i class="bi bi-trash3"></i> Eliminar</button>
+
+      <div class="todo-body ${isExpanded ? '' : 'hidden'}">
+        <div class="todo-checks">
+          ${visibleTasks
+            .map(
+              (task, idx) => `<div class="todo-task-row ${isTaskOverdue(task) ? 'is-overdue' : ''}">
+                <label class="todo-check">
+                  <input type="checkbox" data-todo-task="${todo.id}" data-task-index="${start + idx}" ${task.done ? 'checked' : ''} />
+                  <span>${task.title}</span>
+                </label>
+                <div class="todo-task-dates">
+                  <span><i class="bi bi-calendar-range"></i> ${task.startDate || 'Sin desde'} → ${task.endDate || 'Sin hasta'}</span>
+                </div>
+                <div class="todo-task-actions">
+                  ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
+                  <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todo.id}" data-task-index="${start + idx}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
+                </div>
+              </div>`,
+            )
+            .join('')}
+        </div>
+        ${
+          totalPages > 1
+            ? `<div class="todo-pagination">
+                <button class="btn btn-pill btn-ghost btn-subtle" data-todo-page-prev="${todo.id}" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
+                <span>Página ${currentPage} de ${totalPages}</span>
+                <button class="btn btn-pill btn-ghost btn-subtle" data-todo-page-next="${todo.id}" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
+              </div>`
+            : ''
+        }
+        <div class="todo-actions">
+          <button class="btn btn-pill btn-soft btn-subtle" data-edit-todo="${todo.id}"><i class="bi bi-pencil-square"></i> Editar módulo</button>
+          <button class="btn btn-pill btn-ghost btn-subtle" data-delete-todo="${todo.id}"><i class="bi bi-trash3"></i> Eliminar</button>
+        </div>
       </div>
     </div>
   </article>`;
@@ -933,7 +948,7 @@ function todoCard(todo) {
 function createTaskRow(task = {}) {
   return `<div class="task-form-row">
     <input type="text" data-task-field="title" placeholder="Título de tarea" value="${task.title || ''}" />
-    <input type="text" data-task-field="startDate" value="${task.startDate || ''}" placeholder="Desde" />
+    <input type="text" data-task-field="startDate" data-task-done="${task.done ? '1' : '0'}" value="${task.startDate || ''}" placeholder="Desde" />
     <input type="text" data-task-field="endDate" value="${task.endDate || ''}" placeholder="Hasta" />
     <button type="button" class="btn btn-pill btn-ghost" data-remove-task-row><i class="bi bi-trash3"></i></button>
   </div>`;
@@ -952,7 +967,11 @@ function initTodoTaskDatePickers() {
       locale: 'es',
       dateFormat: 'Y-m-d',
       allowInput: true,
-      appendTo: $('todoModal')?.querySelector('.modal-content') || $('todoModal'),
+      appendTo: $('todoModal'),
+      positionElement: input,
+      position: 'auto left',
+      disableMobile: true,
+      static: true,
     });
   });
 }
@@ -963,7 +982,7 @@ function collectTodoTasksFromForm() {
       title: row.querySelector('[data-task-field="title"]')?.value.trim() || '',
       startDate: row.querySelector('[data-task-field="startDate"]')?.value || '',
       endDate: row.querySelector('[data-task-field="endDate"]')?.value || '',
-      done: false,
+      done: row.querySelector('[data-task-field="startDate"]')?.dataset?.taskDone === '1',
     }))
     .filter((task) => task.title);
 }
@@ -1017,6 +1036,9 @@ async function importTodoTasksFromXlsx() {
 function renderTodoList() {
   const list = $('todoList');
   if (!list) return;
+  if (todos.length && (!expandedTodoId || !todos.some((todo) => todo.id === expandedTodoId))) {
+    expandedTodoId = todos[0].id;
+  }
   list.innerHTML = todos.length ? todos.map(todoCard).join('') : '<p>No hay checklist creados.</p>';
 }
 
@@ -1235,6 +1257,19 @@ async function onSaveTodo(e) {
   await loadReferences();
 }
 
+function openTodoModuleEditor(id) {
+  const todo = todos.find((row) => row.id === id);
+  if (!todo) return;
+  editingTodoId = id;
+  $('todoTitle').value = todo.title || '';
+  $('todoCover').value = todo.cover || '';
+  $('todoCoverFile').value = '';
+  $('todoTasksXlsx').value = '';
+  clearTodoInlineMessage();
+  renderTodoTaskRows(todo.tasks || []);
+  $('todoModal').showModal();
+}
+
 async function editTodoTask(todoId, taskIndex) {
   const todo = todos.find((row) => row.id === todoId);
   const task = todo?.tasks?.[taskIndex];
@@ -1263,7 +1298,7 @@ async function editTodoTask(todoId, taskIndex) {
     title: data.title,
     startDate: data.startDate,
     endDate: data.endDate,
-    done: false,
+    done: tasks[taskIndex]?.done || false,
   };
   await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
   await loadReferences();
@@ -1957,11 +1992,22 @@ function bindEvents() {
 
   $('todoList').addEventListener('click', async (e) => {
     const deleteId = e.target.closest('[data-delete-todo]')?.dataset?.deleteTodo;
+    const editId = e.target.closest('[data-edit-todo]')?.dataset?.editTodo;
+    const toggleId = e.target.closest('[data-toggle-todo]')?.dataset?.toggleTodo;
     const pagePrev = e.target.closest('[data-todo-page-prev]')?.dataset?.todoPagePrev;
     const pageNext = e.target.closest('[data-todo-page-next]')?.dataset?.todoPageNext;
     const taskEditBtn = e.target.closest('[data-edit-task]');
     const todoId = taskEditBtn?.dataset?.editTask;
     const taskIndex = Number(taskEditBtn?.dataset?.taskIndex);
+    if (toggleId) {
+      expandedTodoId = expandedTodoId === toggleId ? null : toggleId;
+      renderTodoList();
+      return;
+    }
+    if (editId) {
+      openTodoModuleEditor(editId);
+      return;
+    }
     if (pagePrev) {
       todoTaskPageMap.set(pagePrev, Math.max((todoTaskPageMap.get(pagePrev) || 1) - 1, 1));
       renderTodoList();

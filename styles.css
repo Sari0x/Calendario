@@ -104,7 +104,7 @@ p {
 .folder-logo {
   display: block;
   width: 150px;
-  max-height: 80px;
+  max-height: 40px;
 }
 
 .menu-actions {
@@ -908,8 +908,8 @@ textarea {
 }
 
 .todo-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   min-height: 360px;
 }
@@ -919,6 +919,7 @@ textarea {
   border-radius: 18px;
   overflow: hidden;
   background: #fff;
+  width: 100%;
 }
 
 .todo-item.is-overdue {
@@ -941,6 +942,12 @@ textarea {
 .todo-top {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.todo-top-actions {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
 }

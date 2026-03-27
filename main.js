@@ -528,6 +528,15 @@ function statusMeta(status) {
   return { text: 'Próxima', cls: 'upcoming', icon: 'bi-calendar2-event' };
 }
 
+function playlistSelectOptions(selectedId = '') {
+  const rows = ['<option value="">Sin lista de reproducción</option>'];
+  playlists.forEach((playlist) => {
+    rows.push(`<option value="${playlist.id}" ${playlist.id === selectedId ? 'selected' : ''}>${playlist.name}</option>`);
+  });
+  rows.push('<option value="__new__">+ Agregar nueva</option>');
+  return rows.join('');
+}
+
 function meetingCard(meeting) {
   const status = meetingStatus(meeting);
   const isFinished = status === 'finished';
@@ -619,6 +628,12 @@ function meetingCard(meeting) {
                 : '<span class="recording-empty"><i class="bi bi-camera-reels"></i> Sin grabación cargada</span>'
             }
             <div class="post-fields ${isPostExpanded ? '' : 'hidden'}">
+              <label>Lista de reproducción
+                <div class="playlist-inline-wrap">
+                  <select data-post-playlist="${meeting.id}">${playlistSelectOptions(meeting.playlistId || '')}</select>
+                  <button class="btn btn-pill btn-ghost btn-subtle" type="button" data-post-new-playlist="${meeting.id}"><i class="bi bi-plus-lg"></i> Agregar nueva</button>
+                </div>
+              </label>
               <label>Link de grabación
                 <input type="url" name="recordingLink" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
               </label>
@@ -932,6 +947,7 @@ function initTodoTaskDatePickers() {
       locale: 'es',
       dateFormat: 'Y-m-d',
       allowInput: true,
+      appendTo: $('todoModal'),
     });
   });
 }
@@ -945,6 +961,18 @@ function collectTodoTasksFromForm() {
       done: false,
     }))
     .filter((task) => task.title);
+}
+
+function showTodoModalNotice(message = '') {
+  const notice = $('todoModalNotice');
+  if (!notice) return;
+  if (!message) {
+    notice.textContent = '';
+    notice.classList.add('hidden');
+    return;
+  }
+  notice.textContent = message;
+  notice.classList.remove('hidden');
 }
 
 function normalizeExcelDate(value) {
@@ -970,9 +998,10 @@ function normalizeExcelDate(value) {
 async function importTodoTasksFromXlsx() {
   const file = $('todoTasksXlsx').files?.[0];
   if (!file) {
-    await IOSSwal.fire({ icon: 'info', title: 'Seleccioná un archivo XLSX primero.' });
+    showTodoModalNotice('Seleccioná un archivo XLSX primero para importar tareas.');
     return;
   }
+  showTodoModalNotice('');
   const buffer = await file.arrayBuffer();
   const workbook = globalThis.XLSX.read(buffer, { type: 'array' });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -985,15 +1014,11 @@ async function importTodoTasksFromXlsx() {
     }))
     .filter((row) => row.title);
   if (!mapped.length) {
-    await IOSSwal.fire({
-      icon: 'warning',
-      title: 'No encontré tareas válidas',
-      text: 'Usá columnas: Titulo | Desde | Hasta.',
-    });
+    showTodoModalNotice('No encontré tareas válidas. Usá columnas: Titulo | Desde | Hasta.');
     return;
   }
   renderTodoTaskRows(mapped);
-  await IOSSwal.fire({ icon: 'success', title: `${mapped.length} tareas importadas`, timer: 1200, showConfirmButton: false });
+  showTodoModalNotice(`${mapped.length} tareas importadas correctamente.`);
 }
 
 function renderTodoList() {
@@ -1023,6 +1048,7 @@ async function loadReferences() {
   renderFilterOptions();
   renderPickers();
   renderTodoList();
+  if (filteredMeetings.length || meetingsList.innerHTML) renderCurrentPage();
 }
 
 async function fetchMeetings({ forceRefresh = false } = {}) {
@@ -1180,6 +1206,7 @@ async function deletePlaylist(id) {
 
 async function onSaveTodo(e) {
   e.preventDefault();
+  showTodoModalNotice('');
   const title = $('todoTitle').value.trim();
   const coverUrl = $('todoCover').value.trim();
   const coverFile = $('todoCoverFile').files?.[0];
@@ -1199,11 +1226,7 @@ async function onSaveTodo(e) {
     }
   }
   if (!tasks.length) {
-    await IOSSwal.fire({
-      icon: 'warning',
-      title: 'Faltan tareas',
-      text: 'Agregá al menos una tarea para guardar el módulo.',
-    });
+    showTodoModalNotice('Agregá al menos una tarea para guardar el módulo.');
     return;
   }
   const payload = { title, cover, tasks };
@@ -1541,13 +1564,46 @@ async function finishMeetingNow(id) {
 async function savePostMeeting(id) {
   const linkInput = document.querySelector(`[data-recording-link="${id}"]`);
   const commentInput = document.querySelector(`[data-post-comment="${id}"]`);
+  const playlistSelect = document.querySelector(`[data-post-playlist="${id}"]`);
   if (!linkInput || !commentInput) return;
+  const playlistId = playlistSelect?.value && playlistSelect.value !== '__new__' ? playlistSelect.value : '';
+  const selectedPlaylist = playlists.find((p) => p.id === playlistId);
   await update(ref(rtdb, `meetings/${id}`), {
     recordingLink: linkInput.value.trim(),
     postComment: commentInput.value.trim(),
+    playlistId: selectedPlaylist?.id || '',
+    playlistName: selectedPlaylist?.name || '',
     updatedAt: new Date().toISOString(),
   });
   await IOSSwal.fire({ icon: 'success', title: 'Guardado', timer: 1100, showConfirmButton: false });
+  await fetchMeetings({ forceRefresh: true });
+}
+
+async function editFinishedMeetingPlaylist(id) {
+  const row = filteredMeetings.find((m) => m.id === id);
+  if (!row) return;
+  const options = playlists.reduce((acc, playlist) => {
+    acc[playlist.id] = playlist.name;
+    return acc;
+  }, { '': 'Sin lista de reproducción' });
+
+  const result = await IOSSwal.fire({
+    title: 'Asignar lista de reproducción',
+    input: 'select',
+    inputOptions: options,
+    inputValue: row.playlistId || '',
+    showCancelButton: true,
+    confirmButtonText: 'Guardar',
+    cancelButtonText: 'Cancelar',
+  });
+  if (!result.isConfirmed) return;
+  const selected = playlists.find((p) => p.id === result.value);
+  await update(ref(rtdb, `meetings/${id}`), {
+    playlistId: selected?.id || '',
+    playlistName: selected?.name || '',
+    updatedAt: new Date().toISOString(),
+  });
+  await fetchMeetings({ forceRefresh: true });
 }
 
 async function editFinishedMeetingPlaylist(id) {
@@ -1727,6 +1783,7 @@ function bindEvents() {
     $('todoForm').reset();
     $('todoTasksXlsx').value = '';
     $('todoCoverFile').value = '';
+    showTodoModalNotice('');
     renderTodoTaskRows();
   });
 
@@ -1763,6 +1820,7 @@ function bindEvents() {
     $('todoForm').reset();
     $('todoTasksXlsx').value = '';
     $('todoCoverFile').value = '';
+    showTodoModalNotice('');
     renderTodoTaskRows();
     $('todoModal').showModal();
   });
@@ -1889,6 +1947,7 @@ function bindEvents() {
     const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     const idSavePost = e.target.closest('[data-save-post]')?.dataset?.savePost;
     const idFinishedPlaylist = e.target.closest('[data-edit-finished-playlist]')?.dataset?.editFinishedPlaylist;
+    const idPostNewPlaylist = e.target.closest('[data-post-new-playlist]')?.dataset?.postNewPlaylist;
     const idTogglePost = e.target.closest('[data-toggle-post]')?.dataset?.togglePost;
     const idOpenRecording = e.target.closest('[data-open-recording]')?.dataset?.openRecording;
     const idCopyRecording = e.target.closest('[data-copy-recording]')?.dataset?.copyRecording;
@@ -1922,7 +1981,22 @@ function bindEvents() {
       const row = filteredMeetings.find((m) => m.id === idCopyRecording);
       if (row?.recordingLink) await copyToClipboard(row.recordingLink, 'Link de grabación copiado.');
     }
+    if (idPostNewPlaylist) {
+      openPlaylistsModal();
+      return;
+    }
     if (idSavePost) await savePostMeeting(idSavePost);
+  });
+
+  meetingsList.addEventListener('change', (e) => {
+    const playlistSelect = e.target.closest('[data-post-playlist]');
+    if (!playlistSelect) return;
+    if (playlistSelect.value === '__new__') {
+      openPlaylistsModal();
+      const meetingId = playlistSelect.dataset.postPlaylist;
+      const row = filteredMeetings.find((m) => m.id === meetingId);
+      playlistSelect.value = row?.playlistId || '';
+    }
   });
 
   $('todoList').addEventListener('click', async (e) => {

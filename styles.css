@@ -77,28 +77,34 @@ p {
 
 .hub-folders {
   display: flex;
-  gap: 8px;
+  gap: 10px;
+  align-items: center;
 }
 
-.folder-tab {
-  border: 1px solid #4a4a78;
-  background: rgba(255, 255, 255, 0.1);
-  color: #eef0ff;
-  border-radius: 12px 12px 0 0;
-  padding: 8px 14px;
-  font-weight: 700;
+.folder-logo-btn {
+  border: 1px solid transparent;
+  border-radius: 16px;
+  padding: 4px;
+  background: transparent;
   cursor: pointer;
+  opacity: 0.82;
 }
 
-.folder-tab.active {
-  background: #f8f7ff;
-  color: #2b2a4c;
+.folder-logo-btn.active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .brand-logo {
   width: 180px;
   object-fit: contain;
-  cursor: pointer;
+}
+
+.folder-logo {
+  display: block;
+  width: 150px;
+  max-height: 40px;
 }
 
 .menu-actions {
@@ -1046,6 +1052,30 @@ textarea {
   align-items: center;
 }
 
+.todo-inline-message {
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-weight: 600;
+}
+
+.todo-inline-message.warning {
+  color: #8d1f1f;
+  background: #ffe7e8;
+  border: 1px solid #ffd0d2;
+}
+
+.todo-inline-message.success {
+  color: #155e2d;
+  background: #e3f8e8;
+  border: 1px solid #caedd4;
+}
+
+.todo-inline-message.info {
+  color: #2e2f69;
+  background: #ebeeff;
+  border: 1px solid #d8ddff;
+}
+
 #todoSection {
   min-height: 460px;
 }
@@ -1207,6 +1237,14 @@ textarea {
 
 .flatpickr-day {
   position: relative;
+}
+
+.flatpickr-calendar {
+  z-index: 100000 !important;
+}
+
+.swal2-container {
+  z-index: 100001 !important;
 }
 
 .day-meet-count {

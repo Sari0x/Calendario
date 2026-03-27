@@ -138,6 +138,20 @@ function showNotice(message) {
   appNotice.classList.remove('hidden');
 }
 
+function showTodoInlineMessage(message, type = 'info') {
+  const holder = $('todoInlineMessage');
+  if (!holder) return;
+  holder.textContent = message;
+  holder.className = `sub todo-inline-message ${type}`;
+}
+
+function clearTodoInlineMessage() {
+  const holder = $('todoInlineMessage');
+  if (!holder) return;
+  holder.textContent = '';
+  holder.className = 'sub todo-inline-message hidden';
+}
+
 function setHeaderActionsDisabled(disabled) {
   headerActionButtons.forEach((button) => {
     button.disabled = disabled;
@@ -588,7 +602,6 @@ function meetingCard(meeting) {
 
     <div class="meeting-actions">
       ${isFinished ? `<button class="btn btn-soft btn-soft-radius" data-reschedule="${meeting.id}"><i class="bi bi-arrow-repeat"></i> Reprogramar</button>` : ''}
-      ${isFinished ? `<button class="btn btn-soft btn-soft-radius" data-edit-finished-playlist="${meeting.id}"><i class="bi bi-collection-play"></i> Lista</button>` : ''}
       ${
         status === 'in_progress'
           ? `<button class="btn btn-soft btn-soft-radius" data-finish-now="${meeting.id}" ${isFinishing ? 'disabled' : ''}>${
@@ -619,6 +632,13 @@ function meetingCard(meeting) {
                 : '<span class="recording-empty"><i class="bi bi-camera-reels"></i> Sin grabación cargada</span>'
             }
             <div class="post-fields ${isPostExpanded ? '' : 'hidden'}">
+              <label>Lista de reproducción
+                <select data-post-playlist="${meeting.id}">
+                  <option value="">Sin lista de reproducción</option>
+                  ${playlists.map((playlist) => `<option value="${playlist.id}" ${meeting.playlistId === playlist.id ? 'selected' : ''}>${playlist.name}</option>`).join('')}
+                  <option value="__add_new__">+ Agregar nueva</option>
+                </select>
+              </label>
               <label>Link de grabación
                 <input type="url" name="recordingLink" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
               </label>
@@ -780,7 +800,7 @@ function renderFilterOptions() {
     .join('')}`;
   $('meetingPlaylistSelect').innerHTML = `<option value="">Sin lista de reproducción</option>${playlists
     .map((p) => `<option value="${p.id}">${p.name}</option>`)
-    .join('')}`;
+    .join('')}<option value="__add_new__">+ Agregar nueva</option>`;
   $('filterProvider').value = activeFilterProvider;
   $('filterParticipant').value = activeFilterParticipant;
   $('filterPlaylist').value = activeFilterPlaylist;
@@ -913,8 +933,8 @@ function todoCard(todo) {
 function createTaskRow(task = {}) {
   return `<div class="task-form-row">
     <input type="text" data-task-field="title" placeholder="Título de tarea" value="${task.title || ''}" />
-    <input type="date" data-task-field="startDate" value="${task.startDate || ''}" />
-    <input type="date" data-task-field="endDate" value="${task.endDate || ''}" />
+    <input type="text" data-task-field="startDate" value="${task.startDate || ''}" placeholder="Desde" />
+    <input type="text" data-task-field="endDate" value="${task.endDate || ''}" placeholder="Hasta" />
     <button type="button" class="btn btn-pill btn-ghost" data-remove-task-row><i class="bi bi-trash3"></i></button>
   </div>`;
 }
@@ -932,6 +952,7 @@ function initTodoTaskDatePickers() {
       locale: 'es',
       dateFormat: 'Y-m-d',
       allowInput: true,
+      appendTo: $('todoModal')?.querySelector('.modal-content') || $('todoModal'),
     });
   });
 }
@@ -970,9 +991,10 @@ function normalizeExcelDate(value) {
 async function importTodoTasksFromXlsx() {
   const file = $('todoTasksXlsx').files?.[0];
   if (!file) {
-    await IOSSwal.fire({ icon: 'info', title: 'Seleccioná un archivo XLSX primero.' });
+    showTodoInlineMessage('Seleccioná un archivo XLSX primero.', 'warning');
     return;
   }
+  clearTodoInlineMessage();
   const buffer = await file.arrayBuffer();
   const workbook = globalThis.XLSX.read(buffer, { type: 'array' });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -985,15 +1007,11 @@ async function importTodoTasksFromXlsx() {
     }))
     .filter((row) => row.title);
   if (!mapped.length) {
-    await IOSSwal.fire({
-      icon: 'warning',
-      title: 'No encontré tareas válidas',
-      text: 'Usá columnas: Titulo | Desde | Hasta.',
-    });
+    showTodoInlineMessage('No encontré tareas válidas. Usá columnas: Titulo | Desde | Hasta.', 'warning');
     return;
   }
   renderTodoTaskRows(mapped);
-  await IOSSwal.fire({ icon: 'success', title: `${mapped.length} tareas importadas`, timer: 1200, showConfirmButton: false });
+  showTodoInlineMessage(`${mapped.length} tareas importadas correctamente.`, 'success');
 }
 
 function renderTodoList() {
@@ -1180,6 +1198,7 @@ async function deletePlaylist(id) {
 
 async function onSaveTodo(e) {
   e.preventDefault();
+  clearTodoInlineMessage();
   const title = $('todoTitle').value.trim();
   const coverUrl = $('todoCover').value.trim();
   const coverFile = $('todoCoverFile').files?.[0];
@@ -1199,11 +1218,7 @@ async function onSaveTodo(e) {
     }
   }
   if (!tasks.length) {
-    await IOSSwal.fire({
-      icon: 'warning',
-      title: 'Faltan tareas',
-      text: 'Agregá al menos una tarea para guardar el módulo.',
-    });
+    showTodoInlineMessage('Faltan tareas: agregá al menos una para guardar el módulo.', 'warning');
     return;
   }
   const payload = { title, cover, tasks };
@@ -1541,8 +1556,16 @@ async function finishMeetingNow(id) {
 async function savePostMeeting(id) {
   const linkInput = document.querySelector(`[data-recording-link="${id}"]`);
   const commentInput = document.querySelector(`[data-post-comment="${id}"]`);
-  if (!linkInput || !commentInput) return;
+  const playlistSelect = document.querySelector(`[data-post-playlist="${id}"]`);
+  if (!linkInput || !commentInput || !playlistSelect) return;
+  if (playlistSelect.value === '__add_new__') {
+    openPlaylistsModal();
+    return;
+  }
+  const selected = playlists.find((playlist) => playlist.id === playlistSelect.value);
   await update(ref(rtdb, `meetings/${id}`), {
+    playlistId: selected?.id || '',
+    playlistName: selected?.name || '',
     recordingLink: linkInput.value.trim(),
     postComment: commentInput.value.trim(),
     updatedAt: new Date().toISOString(),
@@ -1681,12 +1704,6 @@ function bindPickerEvents(type) {
 }
 
 function bindEvents() {
-  document.querySelectorAll('.brand-logo').forEach((logo) => {
-    logo.addEventListener('click', () => {
-      window.location.href = './index.html';
-    });
-  });
-
   $('openMeetingForm').addEventListener('click', async () => {
     const isCollapsed = $('meetingFormSection').classList.contains('collapsed');
     if (isCollapsed) {
@@ -1703,6 +1720,11 @@ function bindEvents() {
   $('openParticipantsModal').addEventListener('click', () => openParticipantModal());
   $('openPlaylistsModal').addEventListener('click', () => openPlaylistsModal());
   $('addPlaylistInline').addEventListener('click', () => openPlaylistsModal());
+  $('meetingPlaylistSelect').addEventListener('change', (e) => {
+    if (e.target.value !== '__add_new__') return;
+    e.target.value = '';
+    openPlaylistsModal();
+  });
   $('openSlackConfigModal').addEventListener('click', async () => {
     await loadSlackSettings();
     $('slackConfigModal').showModal();
@@ -1727,6 +1749,7 @@ function bindEvents() {
     $('todoForm').reset();
     $('todoTasksXlsx').value = '';
     $('todoCoverFile').value = '';
+    clearTodoInlineMessage();
     renderTodoTaskRows();
   });
 
@@ -1763,6 +1786,7 @@ function bindEvents() {
     $('todoForm').reset();
     $('todoTasksXlsx').value = '';
     $('todoCoverFile').value = '';
+    clearTodoInlineMessage();
     renderTodoTaskRows();
     $('todoModal').showModal();
   });
@@ -1876,6 +1900,14 @@ function bindEvents() {
   $('scrollUpBtn').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
   $('scrollDownBtn').addEventListener('click', () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
 
+  meetingsList.addEventListener('change', (e) => {
+    const playlistSelect = e.target.closest('[data-post-playlist]');
+    if (!playlistSelect) return;
+    if (playlistSelect.value !== '__add_new__') return;
+    playlistSelect.value = '';
+    openPlaylistsModal();
+  });
+
   meetingsList.addEventListener('click', async (e) => {
     if (e.target.closest('[data-retry-fetch]')) {
       await fetchMeetings({ forceRefresh: true });
@@ -1888,7 +1920,6 @@ function bindEvents() {
     const idCopyLink = e.target.closest('[data-copy-link]')?.dataset?.copyLink;
     const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     const idSavePost = e.target.closest('[data-save-post]')?.dataset?.savePost;
-    const idFinishedPlaylist = e.target.closest('[data-edit-finished-playlist]')?.dataset?.editFinishedPlaylist;
     const idTogglePost = e.target.closest('[data-toggle-post]')?.dataset?.togglePost;
     const idOpenRecording = e.target.closest('[data-open-recording]')?.dataset?.openRecording;
     const idCopyRecording = e.target.closest('[data-copy-recording]')?.dataset?.copyRecording;
@@ -1905,7 +1936,6 @@ function bindEvents() {
       scrollToMeetingForm();
     }
     if (idDelete) await deleteMeeting(idDelete);
-    if (idFinishedPlaylist) await editFinishedMeetingPlaylist(idFinishedPlaylist);
     if (idCopyLink) {
       const row = filteredMeetings.find((m) => m.id === idCopyLink);
       if (row?.link) await copyToClipboard(row.link, 'Link copiado al portapapeles.');

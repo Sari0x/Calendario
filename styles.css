@@ -1053,7 +1053,8 @@ textarea {
 
 .todo-task-comment {
   font-size: 12px;
-  color: #565478;
+  color: #2f8f4e;
+  font-style: italic;
   display: inline-flex;
   align-items: center;
   gap: 6px;

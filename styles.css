@@ -868,7 +868,7 @@ textarea {
 }
 
 #todoModal {
-  width: min(980px, 96vw);
+  width: min(1120px, 98vw);
   overflow: visible;
 }
 
@@ -1101,20 +1101,34 @@ textarea {
   width: 100%;
 }
 
+.task-form-row .flatpickr-wrapper,
+.sw-task-dates .flatpickr-wrapper {
+  position: relative;
+}
+
+.task-form-row .flatpickr-calendar,
+.sw-task-dates .flatpickr-calendar {
+  z-index: 100005 !important;
+}
+
 .task-form-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 160px 160px auto;
+  grid-template-columns: minmax(0, 1.45fr) minmax(140px, 0.7fr) minmax(140px, 0.7fr) auto;
   gap: 8px;
   align-items: center;
   position: relative;
   overflow: visible;
 }
 
+.task-form-row > * {
+  min-width: 0;
+}
+
 .task-form-row input[data-task-field='comment'] {
   grid-column: 1 / -1;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1100px) {
   .task-form-row {
     grid-template-columns: 1fr 1fr auto;
   }

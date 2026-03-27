@@ -969,9 +969,9 @@ function initTodoTaskDatePickers() {
       locale: 'es',
       dateFormat: 'Y-m-d',
       allowInput: true,
-      appendTo: input.closest('.task-form-row') || $('todoModal'),
+      appendTo: $('todoModal')?.querySelector('.modal-content') || $('todoModal'),
       positionElement: input,
-      position: 'auto left',
+      position: 'below left',
       disableMobile: true,
     });
   });
@@ -1025,10 +1025,11 @@ async function importTodoTasksFromXlsx() {
       title: String(row.Titulo || row.Título || row.titulo || '').trim(),
       startDate: normalizeExcelDate(row.Desde || row.desde),
       endDate: normalizeExcelDate(row.Hasta || row.hasta),
+      comment: String(row.Comentarios || row.comentarios || row.Comentario || row.comentario || '').trim(),
     }))
     .filter((row) => row.title);
   if (!mapped.length) {
-    showTodoInlineMessage('No encontré tareas válidas. Usá columnas: Titulo | Desde | Hasta.', 'warning');
+    showTodoInlineMessage('No encontré tareas válidas. Usá columnas: Titulo | Desde | Hasta | Comentarios.', 'warning');
     return;
   }
   renderTodoTaskRows(mapped);
@@ -1276,6 +1277,7 @@ async function editTodoTask(todoId, taskIndex) {
   if (!todo || !task) return;
   const { value: data, isConfirmed } = await IOSSwal.fire({
     title: 'Editar tarea',
+    width: '520px',
     html: `
       <div class="sw-task-form">
         <label class="sw-task-label">Título</label>

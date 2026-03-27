@@ -27,6 +27,10 @@
     <header class="topbar glass">
       <div class="brand-wrap">
         <img src="img/Novo%20Hub%20Logo.png" alt="Novo Hub" class="brand-logo" />
+        <div class="hub-folders" role="tablist" aria-label="Secciones">
+          <button id="folderNovoHub" class="folder-tab active" role="tab" aria-selected="true">Novo Hub</button>
+          <button id="folderTodoNovo" class="folder-tab" role="tab" aria-selected="false">To Do Novo</button>
+        </div>
         <div id="nextMeetingCounter" class="next-meeting-counter hidden"></div>
       </div>
 
@@ -34,8 +38,13 @@
         <button id="openMeetingForm" class="btn btn-pill btn-primary" disabled><i class="bi bi-plus-circle"></i> <span class="btn-label">Nuevo evento</span></button>
         <button id="openProvidersModal" class="btn btn-pill btn-soft" disabled><i class="bi bi-building-add"></i> <span class="btn-label">Proveedor</span></button>
         <button id="openParticipantsModal" class="btn btn-pill btn-soft" disabled><i class="bi bi-person-plus"></i> <span class="btn-label">Participante</span></button>
+        <button id="openPlaylistsModal" class="btn btn-pill btn-soft" disabled><i class="bi bi-collection-play"></i> <span class="btn-label">Lista reproducción</span></button>
         <span class="menu-separator" aria-hidden="true"></span>
         <button id="openSlackConfigModal" class="btn btn-pill btn-slack" disabled><i class="bi bi-slack"></i> <span class="btn-label">Webhook Slack</span></button>
+      </div>
+
+      <div id="todoBackWrap" class="todo-back-wrap hidden">
+        <button id="backToNovoHub" class="btn btn-pill btn-soft"><i class="bi bi-arrow-left"></i> Volver a Novo Hub</button>
       </div>
     </header>
 
@@ -58,6 +67,14 @@
           <label><i class="bi bi-hourglass-split"></i> Duración (min)<input id="meetingDuration" type="number" min="15" step="15" value="60" /></label>
           <label><i class="bi bi-collection"></i> Proveedores participantes<div id="providersPicker" class="multi-picker"></div></label>
           <label><i class="bi bi-people"></i> Participantes<div id="participantsPicker" class="multi-picker"></div></label>
+          <label class="full-col"><i class="bi bi-collection-play"></i> Al finalizar, cargarse en lista de reproducción
+            <div class="playlist-inline-wrap">
+              <select id="meetingPlaylistSelect">
+                <option value="">Sin lista de reproducción</option>
+              </select>
+              <button id="addPlaylistInline" type="button" class="btn btn-pill btn-ghost"><i class="bi bi-plus-lg"></i> Agregar una lista nueva</button>
+            </div>
+          </label>
           <label class="full-col"><i class="bi bi-journal-text"></i> Nota<textarea id="meetingNote" rows="3" placeholder="Agregar nota"></textarea></label>
           <label class="full-col"><i class="bi bi-link-45deg"></i> Link (opcional)<input id="meetingLink" type="url" placeholder="https://..." /></label>
           <div class="full-col slack-notify-box">
@@ -67,7 +84,7 @@
         </div>
       </section>
 
-      <section class="card glass">
+      <section id="meetingsSection" class="card glass">
         <div class="card-header wrap">
           <h2><i class="bi bi-kanban"></i> Reuniones</h2>
           <div class="filter">
@@ -77,6 +94,9 @@
             </select>
             <select id="filterParticipant">
               <option value="">Participante</option>
+            </select>
+            <select id="filterPlaylist" class="hidden">
+              <option value="">Lista de reproducción</option>
             </select>
             <button id="clearFilter" class="btn btn-pill btn-ghost"><i class="bi bi-eraser"></i> Limpiar</button>
           </div>
@@ -104,6 +124,14 @@
           <span id="pageInfo">Página 1</span>
           <button id="nextPage" class="btn btn-pill btn-ghost">Siguiente</button>
         </div>
+      </section>
+
+      <section id="todoSection" class="card glass hidden">
+        <div class="card-header wrap">
+          <h2><i class="bi bi-list-check"></i> To Do Novo</h2>
+          <button id="openTodoModal" class="btn btn-pill btn-primary"><i class="bi bi-plus-circle"></i> Nuevo checklist</button>
+        </div>
+        <div id="todoList" class="todo-list"></div>
       </section>
     </main>
 
@@ -154,6 +182,42 @@
         <div class="modal-actions">
           <button type="button" id="cancelParticipant" class="btn btn-pill btn-ghost">Cancelar</button>
           <button type="submit" id="saveParticipant" class="btn btn-pill btn-primary">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="playlistsModal" class="modal">
+      <form id="playlistsForm" class="modal-content">
+        <h3>Nueva lista de reproducción</h3>
+        <label>Nombre <input id="playlistName" type="text" required /></label>
+        <label>Descripción (opcional) <input id="playlistDescription" type="text" /></label>
+        <div class="modal-list-wrap">
+          <strong>Listas creadas</strong>
+          <div id="playlistsCreatedList" class="created-list"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="cancelPlaylist" class="btn btn-pill btn-ghost">Cancelar</button>
+          <button type="submit" id="savePlaylist" class="btn btn-pill btn-primary">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="todoModal" class="modal">
+      <form id="todoForm" class="modal-content">
+        <h3>Nuevo módulo To Do</h3>
+        <label>Módulo <input id="todoTitle" type="text" required placeholder="Ej: Softland integración" /></label>
+        <label>Portada (URL imagen)
+          <input id="todoCover" type="url" placeholder="https://..." />
+        </label>
+        <div class="todo-task-editor">
+          <strong>Tareas del módulo</strong>
+          <div id="todoTaskRows" class="todo-task-rows"></div>
+          <button id="addTodoTaskRow" type="button" class="btn btn-pill btn-ghost"><i class="bi bi-plus-lg"></i> Agregar tarea</button>
+        </div>
+        <p class="sub">Cada tarea tiene fecha desde/hasta. El módulo recalcula su % automáticamente por tareas realizadas o vencidas.</p>
+        <div class="modal-actions">
+          <button type="button" id="cancelTodo" class="btn btn-pill btn-ghost">Cancelar</button>
+          <button type="submit" id="saveTodo" class="btn btn-pill btn-primary">Guardar</button>
         </div>
       </form>
     </dialog>

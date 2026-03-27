@@ -958,10 +958,59 @@ textarea {
   color: var(--text);
 }
 
+.todo-task-row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.todo-task-row.is-overdue {
+  background: #f1f1f4;
+  color: #7a7a87;
+  border-color: #d2d2dc;
+}
+
+.todo-task-dates {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.todo-task-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.todo-overdue-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #8d1f1f;
+}
+
 .todo-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.todo-task-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.todo-task-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.task-form-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 140px 140px auto;
+  gap: 8px;
+  align-items: center;
 }
 
 @keyframes spin {
@@ -1252,6 +1301,10 @@ textarea {
   .filter button {
     flex: 1 1 100%;
     min-width: 0;
+  }
+
+  .task-form-row {
+    grid-template-columns: 1fr;
   }
 
   .footer {

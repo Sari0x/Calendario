@@ -837,45 +837,83 @@ function startUiTicker() {
 }
 
 function getTodoProgress(todo) {
-  const items = todo.items || [];
-  if (!items.length) return 0;
-  const done = items.filter((item) => item.done).length;
-  return Math.round((done / items.length) * 100);
+  const tasks = todo.tasks || [];
+  if (!tasks.length) return 0;
+  const completed = tasks.filter((task) => task.done || isTaskOverdue(task)).length;
+  return Math.round((completed / tasks.length) * 100);
 }
 
-function isTodoOverdue(todo) {
-  if (!todo.dueDate) return false;
-  if (todo.completed || todo.reactivated) return false;
-  const due = new Date(`${todo.dueDate}T23:59:59`);
-  return Date.now() > due.getTime();
+function isTaskOverdue(task) {
+  if (!task?.endDate) return false;
+  if (task.done) return false;
+  const end = new Date(`${task.endDate}T23:59:59`);
+  return Date.now() > end.getTime();
 }
 
 function todoCard(todo) {
   const progress = getTodoProgress(todo);
-  const overdue = isTodoOverdue(todo);
-  return `<article class="todo-item ${overdue ? 'is-overdue' : ''}">
+  const completed = progress === 100;
+  const totalTasks = todo.tasks?.length || 0;
+  const completedTasks = (todo.tasks || []).filter((task) => task.done || isTaskOverdue(task)).length;
+  const hasOverdue = (todo.tasks || []).some((task) => isTaskOverdue(task));
+  return `<article class="todo-item ${hasOverdue ? 'is-overdue' : ''}">
     ${todo.cover ? `<img class="todo-cover" src="${todo.cover}" alt="${todo.title}" />` : ''}
     <div class="todo-main">
-      <div class="todo-top"><strong>${todo.title}</strong>${overdue ? '<span class="badge overdue"><i class="bi bi-exclamation-triangle"></i> Vencido</span>' : ''}</div>
+      <div class="todo-top"><strong>${todo.title}</strong>${completed ? '<span class="badge finished"><i class="bi bi-check2-circle"></i> Completado</span>' : ''}</div>
       <div class="todo-meta">
-        <span><i class="bi bi-calendar-event"></i> ${todo.dueDate || 'Sin fecha límite'}</span>
-        <span><i class="bi bi-list-task"></i> ${todo.items?.length || 0} ítems</span>
-        ${todo.type === 'progress' ? `<span><i class="bi bi-graph-up"></i> ${progress}%</span>` : ''}
+        <span><i class="bi bi-list-task"></i> ${totalTasks} tareas</span>
+        <span><i class="bi bi-check2-square"></i> ${completedTasks}/${totalTasks} avanzadas</span>
+        <span><i class="bi bi-graph-up"></i> ${progress}%</span>
       </div>
       <div class="todo-checks">
-        ${(todo.items || [])
+        ${(todo.tasks || [])
           .map(
-            (item, idx) =>
-              `<label class="todo-check"><input type="checkbox" data-todo-item="${todo.id}" data-item-index="${idx}" ${item.done ? 'checked' : ''} /> ${item.text}</label>`,
+            (task, idx) => `<div class="todo-task-row ${isTaskOverdue(task) ? 'is-overdue' : ''}">
+              <label class="todo-check">
+                <input type="checkbox" data-todo-task="${todo.id}" data-task-index="${idx}" ${task.done ? 'checked' : ''} />
+                <span>${task.title}</span>
+              </label>
+              <div class="todo-task-dates">
+                <span><i class="bi bi-calendar-range"></i> ${task.startDate || 'Sin desde'} → ${task.endDate || 'Sin hasta'}</span>
+              </div>
+              <div class="todo-task-actions">
+                ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
+                <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todo.id}" data-task-index="${idx}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
+              </div>
+            </div>`,
           )
           .join('')}
       </div>
       <div class="todo-actions">
-        ${overdue ? `<button class="btn btn-pill btn-soft" data-reactivate-todo="${todo.id}"><i class="bi bi-arrow-clockwise"></i> Reactivar</button>` : ''}
         <button class="btn btn-pill btn-ghost btn-subtle" data-delete-todo="${todo.id}"><i class="bi bi-trash3"></i> Eliminar</button>
       </div>
     </div>
   </article>`;
+}
+
+function createTaskRow(task = {}) {
+  return `<div class="task-form-row">
+    <input type="text" data-task-field="title" placeholder="Título de tarea" value="${task.title || ''}" />
+    <input type="date" data-task-field="startDate" value="${task.startDate || ''}" />
+    <input type="date" data-task-field="endDate" value="${task.endDate || ''}" />
+    <button type="button" class="btn btn-pill btn-ghost" data-remove-task-row><i class="bi bi-trash3"></i></button>
+  </div>`;
+}
+
+function renderTodoTaskRows(tasks = []) {
+  const rows = tasks.length ? tasks : [{ title: '', startDate: '', endDate: '' }];
+  $('todoTaskRows').innerHTML = rows.map((task) => createTaskRow(task)).join('');
+}
+
+function collectTodoTasksFromForm() {
+  return Array.from(document.querySelectorAll('#todoTaskRows .task-form-row'))
+    .map((row) => ({
+      title: row.querySelector('[data-task-field="title"]')?.value.trim() || '',
+      startDate: row.querySelector('[data-task-field="startDate"]')?.value || '',
+      endDate: row.querySelector('[data-task-field="endDate"]')?.value || '',
+      done: false,
+    }))
+    .filter((task) => task.title);
 }
 
 function renderTodoList() {
@@ -896,7 +934,11 @@ async function loadReferences() {
   playlists = loadedPlaylists;
   todos = loadedTodos.map((todo) => ({
     ...todo,
-    items: Array.isArray(todo.items) ? todo.items : [],
+    tasks: Array.isArray(todo.tasks)
+      ? todo.tasks
+      : Array.isArray(todo.items)
+        ? todo.items.map((item) => ({ title: item.text || '', startDate: '', endDate: '', done: Boolean(item.done) }))
+        : [],
   }));
   renderFilterOptions();
   renderPickers();
@@ -1059,16 +1101,18 @@ async function deletePlaylist(id) {
 async function onSaveTodo(e) {
   e.preventDefault();
   const title = $('todoTitle').value.trim();
-  const type = $('todoType').value;
   const cover = $('todoCover').value.trim();
-  const dueDate = $('todoDueDate').value;
-  const items = $('todoItems')
-    .value.split('\n')
-    .map((row) => row.trim())
-    .filter(Boolean)
-    .map((text) => ({ text, done: false }));
+  const tasks = collectTodoTasksFromForm();
   if (!title) return;
-  const payload = { title, type, cover, dueDate, items, reactivated: false };
+  if (!tasks.length) {
+    await IOSSwal.fire({
+      icon: 'warning',
+      title: 'Faltan tareas',
+      text: 'Agregá al menos una tarea para guardar el módulo.',
+    });
+    return;
+  }
+  const payload = { title, cover, tasks };
   if (editingTodoId) {
     await update(ref(rtdb, `todos/${editingTodoId}`), { ...payload, updatedAt: new Date().toISOString() });
   } else {
@@ -1077,6 +1121,41 @@ async function onSaveTodo(e) {
   $('todoModal').close();
   editingTodoId = null;
   $('todoForm').reset();
+  renderTodoTaskRows();
+  await loadReferences();
+}
+
+async function editTodoTask(todoId, taskIndex) {
+  const todo = todos.find((row) => row.id === todoId);
+  const task = todo?.tasks?.[taskIndex];
+  if (!todo || !task) return;
+  const { value: data, isConfirmed } = await IOSSwal.fire({
+    title: 'Editar tarea',
+    html: `
+      <input id="swTaskTitle" class="swal2-input" placeholder="Título" value="${task.title || ''}" />
+      <input id="swTaskStart" class="swal2-input" type="date" value="${task.startDate || ''}" />
+      <input id="swTaskEnd" class="swal2-input" type="date" value="${task.endDate || ''}" />
+    `,
+    focusConfirm: false,
+    showCancelButton: true,
+    confirmButtonText: 'Guardar',
+    cancelButtonText: 'Cancelar',
+    preConfirm: () => ({
+      title: document.getElementById('swTaskTitle')?.value.trim() || '',
+      startDate: document.getElementById('swTaskStart')?.value || '',
+      endDate: document.getElementById('swTaskEnd')?.value || '',
+    }),
+  });
+  if (!isConfirmed || !data?.title) return;
+  const tasks = [...todo.tasks];
+  tasks[taskIndex] = {
+    ...tasks[taskIndex],
+    title: data.title,
+    startDate: data.startDate,
+    endDate: data.endDate,
+    done: false,
+  };
+  await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
   await loadReferences();
 }
 
@@ -1524,6 +1603,7 @@ function bindEvents() {
     $('todoModal').close();
     editingTodoId = null;
     $('todoForm').reset();
+    renderTodoTaskRows();
   });
 
   $('providersForm').addEventListener('submit', onSaveProvider);
@@ -1554,7 +1634,12 @@ function bindEvents() {
     await IOSSwal.fire({ icon: 'success', title: 'Configuración guardada', timer: 1000, showConfirmButton: false });
   });
   $('saveMeeting').addEventListener('click', onSaveMeeting);
-  $('openTodoModal').addEventListener('click', () => $('todoModal').showModal());
+  $('openTodoModal').addEventListener('click', () => {
+    editingTodoId = null;
+    $('todoForm').reset();
+    renderTodoTaskRows();
+    $('todoModal').showModal();
+  });
   $('cancelEdit').addEventListener('click', () => resetMeetingForm());
   $('cancelCreateMeeting').addEventListener('click', async () => {
     if (hasMeetingDraft()) {
@@ -1641,6 +1726,15 @@ function bindEvents() {
   $('folderNovoHub').addEventListener('click', () => switchSection('hub'));
   $('folderTodoNovo').addEventListener('click', () => switchSection('todo'));
   $('backToNovoHub').addEventListener('click', () => switchSection('hub'));
+  $('addTodoTaskRow').addEventListener('click', () => {
+    $('todoTaskRows').insertAdjacentHTML('beforeend', createTaskRow());
+  });
+  $('todoTaskRows').addEventListener('click', (e) => {
+    if (!e.target.closest('[data-remove-task-row]')) return;
+    const rows = Array.from(document.querySelectorAll('#todoTaskRows .task-form-row'));
+    if (rows.length <= 1) return;
+    e.target.closest('.task-form-row')?.remove();
+  });
 
   $('prevPage').addEventListener('click', async () => {
     if (currentPage > 1) currentPage -= 1;
@@ -1703,29 +1797,27 @@ function bindEvents() {
 
   $('todoList').addEventListener('click', async (e) => {
     const deleteId = e.target.closest('[data-delete-todo]')?.dataset?.deleteTodo;
-    const reactivateId = e.target.closest('[data-reactivate-todo]')?.dataset?.reactivateTodo;
+    const taskEditBtn = e.target.closest('[data-edit-task]');
+    const todoId = taskEditBtn?.dataset?.editTask;
+    const taskIndex = Number(taskEditBtn?.dataset?.taskIndex);
     if (deleteId) {
       await remove(ref(rtdb, `todos/${deleteId}`));
       await loadReferences();
       return;
     }
-    if (reactivateId) {
-      await update(ref(rtdb, `todos/${reactivateId}`), { reactivated: true, updatedAt: new Date().toISOString() });
-      await loadReferences();
-    }
+    if (todoId && !Number.isNaN(taskIndex)) await editTodoTask(todoId, taskIndex);
   });
 
   $('todoList').addEventListener('change', async (e) => {
-    const todoId = e.target?.dataset?.todoItem;
-    const itemIndex = Number(e.target?.dataset?.itemIndex);
-    if (!todoId || Number.isNaN(itemIndex)) return;
+    const todoId = e.target?.dataset?.todoTask;
+    const taskIndex = Number(e.target?.dataset?.taskIndex);
+    if (!todoId || Number.isNaN(taskIndex)) return;
     const todo = todos.find((row) => row.id === todoId);
     if (!todo) return;
-    const items = [...(todo.items || [])];
-    if (!items[itemIndex]) return;
-    items[itemIndex] = { ...items[itemIndex], done: e.target.checked };
-    const completed = items.length > 0 && items.every((item) => item.done);
-    await update(ref(rtdb, `todos/${todoId}`), { items, completed, reactivated: false, updatedAt: new Date().toISOString() });
+    const tasks = [...(todo.tasks || [])];
+    if (!tasks[taskIndex]) return;
+    tasks[taskIndex] = { ...tasks[taskIndex], done: e.target.checked };
+    await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
     await loadReferences();
   });
 }
@@ -1778,6 +1870,7 @@ function setupFlatpickr() {
   try {
     setupFlatpickr();
     bindEvents();
+    renderTodoTaskRows();
     switchSection('hub');
     await verifyRTDBAccess();
     await Promise.all([loadSlackSettings(), loadReferences(), fetchMeetings({ forceRefresh: true })]);

@@ -204,24 +204,17 @@
 
     <dialog id="todoModal" class="modal">
       <form id="todoForm" class="modal-content">
-        <h3>Nuevo checklist</h3>
-        <label>Título <input id="todoTitle" type="text" required /></label>
-        <label>Tipo
-          <select id="todoType">
-            <option value="simple">Checklist común</option>
-            <option value="progress">Checklist con avance</option>
-          </select>
-        </label>
+        <h3>Nuevo módulo To Do</h3>
+        <label>Módulo <input id="todoTitle" type="text" required placeholder="Ej: Softland integración" /></label>
         <label>Portada (URL imagen)
           <input id="todoCover" type="url" placeholder="https://..." />
         </label>
-        <label>Fecha límite (opcional)
-          <input id="todoDueDate" type="date" />
-        </label>
-        <label>Ítems (uno por línea)
-          <textarea id="todoItems" rows="4" placeholder="Ej: Definir agenda"></textarea>
-        </label>
-        <p class="sub">En tipo avance se calcula el porcentaje automáticamente. Si vence, se marca como vencido pero se puede reactivar.</p>
+        <div class="todo-task-editor">
+          <strong>Tareas del módulo</strong>
+          <div id="todoTaskRows" class="todo-task-rows"></div>
+          <button id="addTodoTaskRow" type="button" class="btn btn-pill btn-ghost"><i class="bi bi-plus-lg"></i> Agregar tarea</button>
+        </div>
+        <p class="sub">Cada tarea tiene fecha desde/hasta. El módulo recalcula su % automáticamente por tareas realizadas o vencidas.</p>
         <div class="modal-actions">
           <button type="button" id="cancelTodo" class="btn btn-pill btn-ghost">Cancelar</button>
           <button type="submit" id="saveTodo" class="btn btn-pill btn-primary">Guardar</button>

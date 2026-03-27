@@ -970,7 +970,7 @@ function initTodoTaskDatePickers() {
       dateFormat: 'Y-m-d',
       allowInput: true,
       disableMobile: true,
-      static: true,
+      position: 'auto left',
     });
   });
 }
@@ -1309,9 +1309,7 @@ async function editTodoTask(todoId, taskIndex) {
           dateFormat: 'Y-m-d',
           allowInput: true,
           disableMobile: true,
-          appendTo: popup.querySelector('.swal2-html-container') || popup,
-          positionElement: startInput,
-          position: 'below left',
+          position: 'auto left',
         });
       }
       if (endInput && !endInput._flatpickr) {
@@ -1320,9 +1318,7 @@ async function editTodoTask(todoId, taskIndex) {
           dateFormat: 'Y-m-d',
           allowInput: true,
           disableMobile: true,
-          appendTo: popup.querySelector('.swal2-html-container') || popup,
-          positionElement: endInput,
-          position: 'below left',
+          position: 'auto left',
         });
       }
     },

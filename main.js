@@ -1606,6 +1606,33 @@ async function editFinishedMeetingPlaylist(id) {
   await fetchMeetings({ forceRefresh: true });
 }
 
+async function editFinishedMeetingPlaylist(id) {
+  const row = filteredMeetings.find((m) => m.id === id);
+  if (!row) return;
+  const options = playlists.reduce((acc, playlist) => {
+    acc[playlist.id] = playlist.name;
+    return acc;
+  }, { '': 'Sin lista de reproducción' });
+
+  const result = await IOSSwal.fire({
+    title: 'Asignar lista de reproducción',
+    input: 'select',
+    inputOptions: options,
+    inputValue: row.playlistId || '',
+    showCancelButton: true,
+    confirmButtonText: 'Guardar',
+    cancelButtonText: 'Cancelar',
+  });
+  if (!result.isConfirmed) return;
+  const selected = playlists.find((p) => p.id === result.value);
+  await update(ref(rtdb, `meetings/${id}`), {
+    playlistId: selected?.id || '',
+    playlistName: selected?.name || '',
+    updatedAt: new Date().toISOString(),
+  });
+  await fetchMeetings({ forceRefresh: true });
+}
+
 async function deleteProvider(id) {
   const result = await IOSSwal.fire({
     title: '¿Estas seguro?',

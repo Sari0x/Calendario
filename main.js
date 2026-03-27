@@ -921,7 +921,10 @@ function todoCard(todo) {
                   <span><i class="bi bi-calendar-range"></i> ${task.startDate || 'Sin desde'} → ${task.endDate || 'Sin hasta'}</span>
                 </div>
                 <div class="todo-task-actions">
-                  ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
+                  <div class="todo-task-flags">
+                    ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
+                    ${task.comment ? '<span class="todo-comment-pill">Con comentarios</span>' : ''}
+                  </div>
                   <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todo.id}" data-task-index="${start + idx}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
                 </div>
               </div>`,
@@ -965,12 +968,15 @@ function renderTodoTaskRows(tasks = []) {
 function initTodoTaskDatePickers() {
   document.querySelectorAll('#todoTaskRows input[data-task-field="startDate"], #todoTaskRows input[data-task-field="endDate"]').forEach((input) => {
     if (input._flatpickr) return;
+    const todoModal = input.closest('#todoModal');
     flatpickr(input, {
       locale: 'es',
       dateFormat: 'Y-m-d',
       allowInput: true,
       disableMobile: true,
-      static: true,
+      appendTo: todoModal || document.body,
+      positionElement: input,
+      position: 'auto left',
     });
   });
 }
@@ -1309,9 +1315,9 @@ async function editTodoTask(todoId, taskIndex) {
           dateFormat: 'Y-m-d',
           allowInput: true,
           disableMobile: true,
-          appendTo: popup.querySelector('.swal2-html-container') || popup,
+          appendTo: popup,
           positionElement: startInput,
-          position: 'below left',
+          position: 'auto left',
         });
       }
       if (endInput && !endInput._flatpickr) {
@@ -1320,9 +1326,9 @@ async function editTodoTask(todoId, taskIndex) {
           dateFormat: 'Y-m-d',
           allowInput: true,
           disableMobile: true,
-          appendTo: popup.querySelector('.swal2-html-container') || popup,
+          appendTo: popup,
           positionElement: endInput,
-          position: 'below left',
+          position: 'auto left',
         });
       }
     },

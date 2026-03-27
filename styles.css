@@ -882,6 +882,8 @@ textarea {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+  position: static;
+  z-index: auto;
 }
 
 .notice {
@@ -1121,8 +1123,8 @@ textarea {
 }
 
 .swal-ios .swal2-actions {
-  position: relative;
-  z-index: 5;
+  position: static;
+  z-index: auto;
 }
 
 .task-form-row {
@@ -1425,7 +1427,14 @@ textarea {
 }
 
 .swal-ios .swal2-html-container {
+  position: relative;
+  z-index: 20;
   overflow: visible !important;
+}
+
+.swal-ios .flatpickr-calendar,
+.swal2-container .flatpickr-calendar {
+  z-index: 100050 !important;
 }
 
 .swal-ios .swal2-title {

@@ -880,6 +880,7 @@ textarea {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .notice {
@@ -1016,6 +1017,14 @@ textarea {
   color: var(--muted);
 }
 
+.todo-task-comment {
+  font-size: 12px;
+  color: #565478;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .todo-task-actions {
   display: flex;
   justify-content: space-between;
@@ -1056,6 +1065,10 @@ textarea {
   flex-wrap: wrap;
 }
 
+.todo-task-import input[type='file'] {
+  max-width: 100%;
+}
+
 .todo-task-rows {
   display: grid;
   gap: 8px;
@@ -1066,6 +1079,56 @@ textarea {
   grid-template-columns: minmax(220px, 1fr) 160px 160px auto;
   gap: 8px;
   align-items: center;
+  position: relative;
+  overflow: visible;
+}
+
+.task-form-row input[data-task-field='comment'] {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 860px) {
+  .task-form-row {
+    grid-template-columns: 1fr 1fr auto;
+  }
+
+  .task-form-row input[data-task-field='title'] {
+    grid-column: 1 / -1;
+  }
+
+  .todo-task-import {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .todo-task-import input[type='file'],
+  .todo-task-import .btn {
+    width: 100%;
+  }
+}
+
+.todo-inline-message {
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-weight: 600;
+}
+
+.todo-inline-message.warning {
+  color: #8d1f1f;
+  background: #ffe7e8;
+  border: 1px solid #ffd0d2;
+}
+
+.todo-inline-message.success {
+  color: #155e2d;
+  background: #e3f8e8;
+  border: 1px solid #caedd4;
+}
+
+.todo-inline-message.info {
+  color: #2e2f69;
+  background: #ebeeff;
+  border: 1px solid #d8ddff;
 }
 
 @media (max-width: 860px) {
@@ -1346,6 +1409,16 @@ textarea {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .sw-task-dates {
+    grid-template-columns: 1fr;
+  }
+
+  #todoModal {
+    width: min(98vw, 98vw);
+  }
 }
 
 @media (max-width: 1080px) {

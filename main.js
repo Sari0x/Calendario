@@ -916,6 +916,7 @@ function todoCard(todo) {
                   <input type="checkbox" data-todo-task="${todo.id}" data-task-index="${start + idx}" ${task.done ? 'checked' : ''} />
                   <span>${task.title}</span>
                 </label>
+                ${task.comment ? `<div class="todo-task-comment"><i class="bi bi-chat-left-text"></i> ${task.comment}</div>` : ''}
                 <div class="todo-task-dates">
                   <span><i class="bi bi-calendar-range"></i> ${task.startDate || 'Sin desde'} → ${task.endDate || 'Sin hasta'}</span>
                 </div>
@@ -951,6 +952,7 @@ function createTaskRow(task = {}) {
     <input type="text" data-task-field="startDate" data-task-done="${task.done ? '1' : '0'}" value="${task.startDate || ''}" placeholder="Desde" />
     <input type="text" data-task-field="endDate" value="${task.endDate || ''}" placeholder="Hasta" />
     <button type="button" class="btn btn-pill btn-ghost" data-remove-task-row><i class="bi bi-trash3"></i></button>
+    <input type="text" data-task-field="comment" value="${task.comment || ''}" placeholder="Comentario (opcional)" />
   </div>`;
 }
 
@@ -967,7 +969,7 @@ function initTodoTaskDatePickers() {
       locale: 'es',
       dateFormat: 'Y-m-d',
       allowInput: true,
-      appendTo: $('todoModal'),
+      appendTo: input.closest('.task-form-row') || $('todoModal'),
       positionElement: input,
       position: 'auto left',
       disableMobile: true,
@@ -981,6 +983,7 @@ function collectTodoTasksFromForm() {
       title: row.querySelector('[data-task-field="title"]')?.value.trim() || '',
       startDate: row.querySelector('[data-task-field="startDate"]')?.value || '',
       endDate: row.querySelector('[data-task-field="endDate"]')?.value || '',
+      comment: row.querySelector('[data-task-field="comment"]')?.value.trim() || '',
       done: row.querySelector('[data-task-field="startDate"]')?.dataset?.taskDone === '1',
     }))
     .filter((task) => task.title);
@@ -1054,7 +1057,7 @@ async function loadReferences() {
     tasks: Array.isArray(todo.tasks)
       ? todo.tasks
       : Array.isArray(todo.items)
-        ? todo.items.map((item) => ({ title: item.text || '', startDate: '', endDate: '', done: Boolean(item.done) }))
+        ? todo.items.map((item) => ({ title: item.text || '', startDate: '', endDate: '', comment: '', done: Boolean(item.done) }))
         : [],
   }));
   renderFilterOptions();
@@ -1287,6 +1290,8 @@ async function editTodoTask(todoId, taskIndex) {
             <input id="swTaskEnd" class="swal2-input sw-task-input" type="text" value="${task.endDate || ''}" />
           </div>
         </div>
+        <label class="sw-task-label">Comentario</label>
+        <input id="swTaskComment" class="swal2-input sw-task-input" type="text" value="${task.comment || ''}" placeholder="Comentario opcional" />
       </div>
     `,
     focusConfirm: false,
@@ -1303,10 +1308,8 @@ async function editTodoTask(todoId, taskIndex) {
           locale: 'es',
           dateFormat: 'Y-m-d',
           allowInput: true,
-          appendTo: popup,
-          positionElement: startInput,
-          position: 'auto left',
           disableMobile: true,
+          static: true,
         });
       }
       if (endInput && !endInput._flatpickr) {
@@ -1314,10 +1317,8 @@ async function editTodoTask(todoId, taskIndex) {
           locale: 'es',
           dateFormat: 'Y-m-d',
           allowInput: true,
-          appendTo: popup,
-          positionElement: endInput,
-          position: 'auto left',
           disableMobile: true,
+          static: true,
         });
       }
     },
@@ -1325,6 +1326,7 @@ async function editTodoTask(todoId, taskIndex) {
       title: document.getElementById('swTaskTitle')?.value.trim() || '',
       startDate: document.getElementById('swTaskStart')?.value || '',
       endDate: document.getElementById('swTaskEnd')?.value || '',
+      comment: document.getElementById('swTaskComment')?.value.trim() || '',
     }),
   });
   if (!isConfirmed || !data?.title) return;
@@ -1334,6 +1336,7 @@ async function editTodoTask(todoId, taskIndex) {
     title: data.title,
     startDate: data.startDate,
     endDate: data.endDate,
+    comment: data.comment,
     done: tasks[taskIndex]?.done || false,
   };
   await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });

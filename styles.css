@@ -852,11 +852,17 @@ textarea {
   border: none;
   border-radius: 20px;
   padding: 0;
-  width: min(440px, 95vw);
+  width: min(440px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
 }
 
 .modal::backdrop {
   background: rgba(0, 0, 0, 0.25);
+}
+
+.modal,
+.modal * {
+  box-sizing: border-box;
 }
 
 .modal-content {
@@ -864,11 +870,12 @@ textarea {
   padding: 16px;
   display: grid;
   gap: 10px;
-  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
 }
 
 #todoModal {
-  width: min(1120px, 98vw);
+  width: min(1120px, calc(100vw - 24px));
   overflow: visible;
 }
 
@@ -884,6 +891,26 @@ textarea {
   flex-wrap: wrap;
   position: static;
   z-index: auto;
+}
+
+.modal input,
+.modal select,
+.modal textarea,
+.modal button {
+  max-width: 100%;
+}
+
+.modal input,
+.modal select,
+.modal textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.modal input[type='file'] {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .notice {
@@ -1164,7 +1191,7 @@ textarea {
   }
 }
 
-@media (max-width: 430px) {
+@media (max-width: 434px) {
   .task-form-row {
     grid-template-columns: 1fr;
   }
@@ -1175,6 +1202,11 @@ textarea {
 
   #todoModal .modal-content {
     max-height: 80vh;
+  }
+
+  .modal {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
   }
 }
 
@@ -1480,7 +1512,7 @@ textarea {
   }
 
   #todoModal {
-    width: min(98vw, 98vw);
+    width: calc(100vw - 24px);
   }
 }
 
@@ -1501,7 +1533,6 @@ textarea {
 @media (max-width: 720px) {
   body {
     padding-top: 170px;
-    overflow-x: hidden;
   }
 
   .container {

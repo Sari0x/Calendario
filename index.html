@@ -209,8 +209,19 @@
         <label>Portada (URL imagen)
           <input id="todoCover" type="url" placeholder="https://..." />
         </label>
+        <label>o Subir portada
+          <input id="todoCoverFile" type="file" accept="image/*" />
+        </label>
+        <div id="todoCoverUploadSpinner" class="upload-spinner hidden">
+          <span class="spinner mini"></span>
+          <span>Subiendo portada...</span>
+        </div>
         <div class="todo-task-editor">
           <strong>Tareas del módulo</strong>
+          <div class="todo-task-import">
+            <input id="todoTasksXlsx" type="file" accept=".xlsx,.xls" />
+            <button id="importTodoTasksXlsx" type="button" class="btn btn-pill btn-soft"><i class="bi bi-file-earmark-excel"></i> Importar XLSX</button>
+          </div>
           <div id="todoTaskRows" class="todo-task-rows"></div>
           <button id="addTodoTaskRow" type="button" class="btn btn-pill btn-ghost"><i class="bi bi-plus-lg"></i> Agregar tarea</button>
         </div>
@@ -240,6 +251,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
     <div class="scroll-arrows">
       <button id="scrollUpBtn" class="btn btn-pill btn-soft"><i class="bi bi-arrow-up"></i></button>

@@ -55,6 +55,7 @@ let editingProviderId = null;
 let editingParticipantId = null;
 let editingPlaylistId = null;
 let editingTodoId = null;
+const todoTaskPageMap = new Map();
 let nearestMeetingId = null;
 let uiTickerInterval = null;
 const pendingFinishMeetingIds = new Set();
@@ -587,6 +588,7 @@ function meetingCard(meeting) {
 
     <div class="meeting-actions">
       ${isFinished ? `<button class="btn btn-soft btn-soft-radius" data-reschedule="${meeting.id}"><i class="bi bi-arrow-repeat"></i> Reprogramar</button>` : ''}
+      ${isFinished ? `<button class="btn btn-soft btn-soft-radius" data-edit-finished-playlist="${meeting.id}"><i class="bi bi-collection-play"></i> Lista</button>` : ''}
       ${
         status === 'in_progress'
           ? `<button class="btn btn-soft btn-soft-radius" data-finish-now="${meeting.id}" ${isFinishing ? 'disabled' : ''}>${
@@ -856,6 +858,11 @@ function todoCard(todo) {
   const totalTasks = todo.tasks?.length || 0;
   const completedTasks = (todo.tasks || []).filter((task) => task.done || isTaskOverdue(task)).length;
   const hasOverdue = (todo.tasks || []).some((task) => isTaskOverdue(task));
+  const perPage = 15;
+  const totalPages = Math.max(Math.ceil(totalTasks / perPage), 1);
+  const currentPage = Math.min(todoTaskPageMap.get(todo.id) || 1, totalPages);
+  const start = (currentPage - 1) * perPage;
+  const visibleTasks = (todo.tasks || []).slice(start, start + perPage);
   return `<article class="todo-item ${hasOverdue ? 'is-overdue' : ''}">
     ${todo.cover ? `<img class="todo-cover" src="${todo.cover}" alt="${todo.title}" />` : ''}
     <div class="todo-main">
@@ -865,12 +872,15 @@ function todoCard(todo) {
         <span><i class="bi bi-check2-square"></i> ${completedTasks}/${totalTasks} avanzadas</span>
         <span><i class="bi bi-graph-up"></i> ${progress}%</span>
       </div>
+      <div class="todo-progress">
+        <div class="todo-progress-bar" style="width:${progress}%"></div>
+      </div>
       <div class="todo-checks">
-        ${(todo.tasks || [])
+        ${visibleTasks
           .map(
             (task, idx) => `<div class="todo-task-row ${isTaskOverdue(task) ? 'is-overdue' : ''}">
               <label class="todo-check">
-                <input type="checkbox" data-todo-task="${todo.id}" data-task-index="${idx}" ${task.done ? 'checked' : ''} />
+                <input type="checkbox" data-todo-task="${todo.id}" data-task-index="${start + idx}" ${task.done ? 'checked' : ''} />
                 <span>${task.title}</span>
               </label>
               <div class="todo-task-dates">
@@ -878,12 +888,21 @@ function todoCard(todo) {
               </div>
               <div class="todo-task-actions">
                 ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
-                <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todo.id}" data-task-index="${idx}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
+                <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todo.id}" data-task-index="${start + idx}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
               </div>
             </div>`,
           )
           .join('')}
       </div>
+      ${
+        totalPages > 1
+          ? `<div class="todo-pagination">
+              <button class="btn btn-pill btn-ghost btn-subtle" data-todo-page-prev="${todo.id}" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
+              <span>Página ${currentPage} de ${totalPages}</span>
+              <button class="btn btn-pill btn-ghost btn-subtle" data-todo-page-next="${todo.id}" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
+            </div>`
+          : ''
+      }
       <div class="todo-actions">
         <button class="btn btn-pill btn-ghost btn-subtle" data-delete-todo="${todo.id}"><i class="bi bi-trash3"></i> Eliminar</button>
       </div>
@@ -903,6 +922,18 @@ function createTaskRow(task = {}) {
 function renderTodoTaskRows(tasks = []) {
   const rows = tasks.length ? tasks : [{ title: '', startDate: '', endDate: '' }];
   $('todoTaskRows').innerHTML = rows.map((task) => createTaskRow(task)).join('');
+  initTodoTaskDatePickers();
+}
+
+function initTodoTaskDatePickers() {
+  document.querySelectorAll('#todoTaskRows input[data-task-field="startDate"], #todoTaskRows input[data-task-field="endDate"]').forEach((input) => {
+    if (input._flatpickr) return;
+    flatpickr(input, {
+      locale: 'es',
+      dateFormat: 'Y-m-d',
+      allowInput: true,
+    });
+  });
 }
 
 function collectTodoTasksFromForm() {
@@ -914,6 +945,55 @@ function collectTodoTasksFromForm() {
       done: false,
     }))
     .filter((task) => task.title);
+}
+
+function normalizeExcelDate(value) {
+  if (!value) return '';
+  if (typeof value === 'number' && globalThis.XLSX?.SSF) {
+    const parsed = globalThis.XLSX.SSF.parse_date_code(value);
+    if (!parsed) return '';
+    return `${String(parsed.y).padStart(4, '0')}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+  }
+  const asString = String(value).trim();
+  const slash = asString.match(/^(\\d{1,2})[/-](\\d{1,2})[/-](\\d{2,4})$/);
+  if (slash) {
+    const day = slash[1].padStart(2, '0');
+    const month = slash[2].padStart(2, '0');
+    const year = slash[3].length === 2 ? `20${slash[3]}` : slash[3];
+    return `${year}-${month}-${day}`;
+  }
+  const date = new Date(asString);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+async function importTodoTasksFromXlsx() {
+  const file = $('todoTasksXlsx').files?.[0];
+  if (!file) {
+    await IOSSwal.fire({ icon: 'info', title: 'Seleccioná un archivo XLSX primero.' });
+    return;
+  }
+  const buffer = await file.arrayBuffer();
+  const workbook = globalThis.XLSX.read(buffer, { type: 'array' });
+  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = globalThis.XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+  const mapped = rows
+    .map((row) => ({
+      title: String(row.Titulo || row.Título || row.titulo || '').trim(),
+      startDate: normalizeExcelDate(row.Desde || row.desde),
+      endDate: normalizeExcelDate(row.Hasta || row.hasta),
+    }))
+    .filter((row) => row.title);
+  if (!mapped.length) {
+    await IOSSwal.fire({
+      icon: 'warning',
+      title: 'No encontré tareas válidas',
+      text: 'Usá columnas: Titulo | Desde | Hasta.',
+    });
+    return;
+  }
+  renderTodoTaskRows(mapped);
+  await IOSSwal.fire({ icon: 'success', title: `${mapped.length} tareas importadas`, timer: 1200, showConfirmButton: false });
 }
 
 function renderTodoList() {
@@ -1101,9 +1181,23 @@ async function deletePlaylist(id) {
 async function onSaveTodo(e) {
   e.preventDefault();
   const title = $('todoTitle').value.trim();
-  const cover = $('todoCover').value.trim();
+  const coverUrl = $('todoCover').value.trim();
+  const coverFile = $('todoCoverFile').files?.[0];
+  let cover = coverUrl;
   const tasks = collectTodoTasksFromForm();
   if (!title) return;
+  if (coverFile) {
+    $('todoCoverUploadSpinner').classList.remove('hidden');
+    $('saveTodo').disabled = true;
+    try {
+      const filePath = `todo-covers/${Date.now()}-${coverFile.name.replace(/\\s+/g, '-')}`;
+      const uploaded = await uploadBytes(storageRef(storage, filePath), coverFile);
+      cover = await getDownloadURL(uploaded.ref);
+    } finally {
+      $('todoCoverUploadSpinner').classList.add('hidden');
+      $('saveTodo').disabled = false;
+    }
+  }
   if (!tasks.length) {
     await IOSSwal.fire({
       icon: 'warning',
@@ -1121,6 +1215,7 @@ async function onSaveTodo(e) {
   $('todoModal').close();
   editingTodoId = null;
   $('todoForm').reset();
+  $('todoCoverFile').value = '';
   renderTodoTaskRows();
   await loadReferences();
 }
@@ -1455,6 +1550,33 @@ async function savePostMeeting(id) {
   await IOSSwal.fire({ icon: 'success', title: 'Guardado', timer: 1100, showConfirmButton: false });
 }
 
+async function editFinishedMeetingPlaylist(id) {
+  const row = filteredMeetings.find((m) => m.id === id);
+  if (!row) return;
+  const options = playlists.reduce((acc, playlist) => {
+    acc[playlist.id] = playlist.name;
+    return acc;
+  }, { '': 'Sin lista de reproducción' });
+
+  const result = await IOSSwal.fire({
+    title: 'Asignar lista de reproducción',
+    input: 'select',
+    inputOptions: options,
+    inputValue: row.playlistId || '',
+    showCancelButton: true,
+    confirmButtonText: 'Guardar',
+    cancelButtonText: 'Cancelar',
+  });
+  if (!result.isConfirmed) return;
+  const selected = playlists.find((p) => p.id === result.value);
+  await update(ref(rtdb, `meetings/${id}`), {
+    playlistId: selected?.id || '',
+    playlistName: selected?.name || '',
+    updatedAt: new Date().toISOString(),
+  });
+  await fetchMeetings({ forceRefresh: true });
+}
+
 async function deleteProvider(id) {
   const result = await IOSSwal.fire({
     title: '¿Estas seguro?',
@@ -1603,6 +1725,8 @@ function bindEvents() {
     $('todoModal').close();
     editingTodoId = null;
     $('todoForm').reset();
+    $('todoTasksXlsx').value = '';
+    $('todoCoverFile').value = '';
     renderTodoTaskRows();
   });
 
@@ -1637,6 +1761,8 @@ function bindEvents() {
   $('openTodoModal').addEventListener('click', () => {
     editingTodoId = null;
     $('todoForm').reset();
+    $('todoTasksXlsx').value = '';
+    $('todoCoverFile').value = '';
     renderTodoTaskRows();
     $('todoModal').showModal();
   });
@@ -1728,7 +1854,9 @@ function bindEvents() {
   $('backToNovoHub').addEventListener('click', () => switchSection('hub'));
   $('addTodoTaskRow').addEventListener('click', () => {
     $('todoTaskRows').insertAdjacentHTML('beforeend', createTaskRow());
+    initTodoTaskDatePickers();
   });
+  $('importTodoTasksXlsx').addEventListener('click', importTodoTasksFromXlsx);
   $('todoTaskRows').addEventListener('click', (e) => {
     if (!e.target.closest('[data-remove-task-row]')) return;
     const rows = Array.from(document.querySelectorAll('#todoTaskRows .task-form-row'));
@@ -1760,6 +1888,7 @@ function bindEvents() {
     const idCopyLink = e.target.closest('[data-copy-link]')?.dataset?.copyLink;
     const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     const idSavePost = e.target.closest('[data-save-post]')?.dataset?.savePost;
+    const idFinishedPlaylist = e.target.closest('[data-edit-finished-playlist]')?.dataset?.editFinishedPlaylist;
     const idTogglePost = e.target.closest('[data-toggle-post]')?.dataset?.togglePost;
     const idOpenRecording = e.target.closest('[data-open-recording]')?.dataset?.openRecording;
     const idCopyRecording = e.target.closest('[data-copy-recording]')?.dataset?.copyRecording;
@@ -1776,6 +1905,7 @@ function bindEvents() {
       scrollToMeetingForm();
     }
     if (idDelete) await deleteMeeting(idDelete);
+    if (idFinishedPlaylist) await editFinishedMeetingPlaylist(idFinishedPlaylist);
     if (idCopyLink) {
       const row = filteredMeetings.find((m) => m.id === idCopyLink);
       if (row?.link) await copyToClipboard(row.link, 'Link copiado al portapapeles.');
@@ -1797,11 +1927,24 @@ function bindEvents() {
 
   $('todoList').addEventListener('click', async (e) => {
     const deleteId = e.target.closest('[data-delete-todo]')?.dataset?.deleteTodo;
+    const pagePrev = e.target.closest('[data-todo-page-prev]')?.dataset?.todoPagePrev;
+    const pageNext = e.target.closest('[data-todo-page-next]')?.dataset?.todoPageNext;
     const taskEditBtn = e.target.closest('[data-edit-task]');
     const todoId = taskEditBtn?.dataset?.editTask;
     const taskIndex = Number(taskEditBtn?.dataset?.taskIndex);
+    if (pagePrev) {
+      todoTaskPageMap.set(pagePrev, Math.max((todoTaskPageMap.get(pagePrev) || 1) - 1, 1));
+      renderTodoList();
+      return;
+    }
+    if (pageNext) {
+      todoTaskPageMap.set(pageNext, (todoTaskPageMap.get(pageNext) || 1) + 1);
+      renderTodoList();
+      return;
+    }
     if (deleteId) {
       await remove(ref(rtdb, `todos/${deleteId}`));
+      todoTaskPageMap.delete(deleteId);
       await loadReferences();
       return;
     }

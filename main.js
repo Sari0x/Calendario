@@ -971,7 +971,6 @@ function initTodoTaskDatePickers() {
       positionElement: input,
       position: 'auto left',
       disableMobile: true,
-      static: true,
     });
   });
 }
@@ -1036,9 +1035,7 @@ async function importTodoTasksFromXlsx() {
 function renderTodoList() {
   const list = $('todoList');
   if (!list) return;
-  if (todos.length && (!expandedTodoId || !todos.some((todo) => todo.id === expandedTodoId))) {
-    expandedTodoId = todos[0].id;
-  }
+  if (expandedTodoId && !todos.some((todo) => todo.id === expandedTodoId)) expandedTodoId = null;
   list.innerHTML = todos.length ? todos.map(todoCard).join('') : '<p>No hay checklist creados.</p>';
 }
 
@@ -1277,14 +1274,53 @@ async function editTodoTask(todoId, taskIndex) {
   const { value: data, isConfirmed } = await IOSSwal.fire({
     title: 'Editar tarea',
     html: `
-      <input id="swTaskTitle" class="swal2-input" placeholder="Título" value="${task.title || ''}" />
-      <input id="swTaskStart" class="swal2-input" type="date" value="${task.startDate || ''}" />
-      <input id="swTaskEnd" class="swal2-input" type="date" value="${task.endDate || ''}" />
+      <div class="sw-task-form">
+        <label class="sw-task-label">Título</label>
+        <input id="swTaskTitle" class="swal2-input sw-task-input" placeholder="Título" value="${task.title || ''}" />
+        <div class="sw-task-dates">
+          <div>
+            <label class="sw-task-label">Desde</label>
+            <input id="swTaskStart" class="swal2-input sw-task-input" type="text" value="${task.startDate || ''}" />
+          </div>
+          <div>
+            <label class="sw-task-label">Hasta</label>
+            <input id="swTaskEnd" class="swal2-input sw-task-input" type="text" value="${task.endDate || ''}" />
+          </div>
+        </div>
+      </div>
     `,
     focusConfirm: false,
     showCancelButton: true,
     confirmButtonText: 'Guardar',
     cancelButtonText: 'Cancelar',
+    didOpen: () => {
+      const popup = Swal.getPopup();
+      if (!popup || typeof flatpickr !== 'function') return;
+      const startInput = popup.querySelector('#swTaskStart');
+      const endInput = popup.querySelector('#swTaskEnd');
+      if (startInput && !startInput._flatpickr) {
+        flatpickr(startInput, {
+          locale: 'es',
+          dateFormat: 'Y-m-d',
+          allowInput: true,
+          appendTo: popup,
+          positionElement: startInput,
+          position: 'auto left',
+          disableMobile: true,
+        });
+      }
+      if (endInput && !endInput._flatpickr) {
+        flatpickr(endInput, {
+          locale: 'es',
+          dateFormat: 'Y-m-d',
+          allowInput: true,
+          appendTo: popup,
+          positionElement: endInput,
+          position: 'auto left',
+          disableMobile: true,
+        });
+      }
+    },
     preConfirm: () => ({
       title: document.getElementById('swTaskTitle')?.value.trim() || '',
       startDate: document.getElementById('swTaskStart')?.value || '',
@@ -1920,7 +1956,17 @@ function bindEvents() {
     if (!e.target.closest('[data-remove-task-row]')) return;
     const rows = Array.from(document.querySelectorAll('#todoTaskRows .task-form-row'));
     if (rows.length <= 1) return;
-    e.target.closest('.task-form-row')?.remove();
+    IOSSwal.fire({
+      title: '¿Eliminar tarea?',
+      text: 'Esta fila se quitará del módulo.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+    }).then((result) => {
+      if (!result.isConfirmed) return;
+      e.target.closest('.task-form-row')?.remove();
+    });
   });
 
   $('prevPage').addEventListener('click', async () => {
@@ -2019,8 +2065,18 @@ function bindEvents() {
       return;
     }
     if (deleteId) {
+      const result = await IOSSwal.fire({
+        title: '¿Eliminar módulo?',
+        text: 'Se eliminará el checklist completo.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+      });
+      if (!result.isConfirmed) return;
       await remove(ref(rtdb, `todos/${deleteId}`));
       todoTaskPageMap.delete(deleteId);
+      if (expandedTodoId === deleteId) expandedTodoId = null;
       await loadReferences();
       return;
     }

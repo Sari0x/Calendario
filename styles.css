@@ -1074,6 +1074,11 @@ textarea {
   gap: 8px;
 }
 
+.task-form-row .flatpickr-wrapper,
+.sw-task-dates .flatpickr-wrapper {
+  width: 100%;
+}
+
 .task-form-row {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 160px 160px auto;
@@ -1310,6 +1315,7 @@ textarea {
 
 .flatpickr-calendar {
   z-index: 100000 !important;
+  max-width: min(307px, calc(100vw - 24px));
 }
 
 .swal2-container {
@@ -1353,6 +1359,11 @@ textarea {
 .swal-ios {
   border-radius: 24px !important;
   box-shadow: 0 16px 60px rgba(23, 22, 36, 0.22) !important;
+  overflow: visible !important;
+}
+
+.swal-ios .swal2-html-container {
+  overflow: visible !important;
 }
 
 .swal-ios .swal2-title {

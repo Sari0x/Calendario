@@ -55,6 +55,7 @@ let editingProviderId = null;
 let editingParticipantId = null;
 let editingPlaylistId = null;
 let editingTodoId = null;
+let expandedTodoId = null;
 const todoTaskPageMap = new Map();
 let nearestMeetingId = null;
 let uiTickerInterval = null;
@@ -136,6 +137,20 @@ function showSpinner(show) {
 function showNotice(message) {
   appNotice.textContent = message;
   appNotice.classList.remove('hidden');
+}
+
+function showTodoInlineMessage(message, type = 'info') {
+  const holder = $('todoInlineMessage');
+  if (!holder) return;
+  holder.textContent = message;
+  holder.className = `sub todo-inline-message ${type}`;
+}
+
+function clearTodoInlineMessage() {
+  const holder = $('todoInlineMessage');
+  if (!holder) return;
+  holder.textContent = '';
+  holder.className = 'sub todo-inline-message hidden';
 }
 
 function setHeaderActionsDisabled(disabled) {
@@ -588,7 +603,6 @@ function meetingCard(meeting) {
 
     <div class="meeting-actions">
       ${isFinished ? `<button class="btn btn-soft btn-soft-radius" data-reschedule="${meeting.id}"><i class="bi bi-arrow-repeat"></i> Reprogramar</button>` : ''}
-      ${isFinished ? `<button class="btn btn-soft btn-soft-radius" data-edit-finished-playlist="${meeting.id}"><i class="bi bi-collection-play"></i> Lista</button>` : ''}
       ${
         status === 'in_progress'
           ? `<button class="btn btn-soft btn-soft-radius" data-finish-now="${meeting.id}" ${isFinishing ? 'disabled' : ''}>${
@@ -619,6 +633,13 @@ function meetingCard(meeting) {
                 : '<span class="recording-empty"><i class="bi bi-camera-reels"></i> Sin grabación cargada</span>'
             }
             <div class="post-fields ${isPostExpanded ? '' : 'hidden'}">
+              <label>Lista de reproducción
+                <select data-post-playlist="${meeting.id}">
+                  <option value="">Sin lista de reproducción</option>
+                  ${playlists.map((playlist) => `<option value="${playlist.id}" ${meeting.playlistId === playlist.id ? 'selected' : ''}>${playlist.name}</option>`).join('')}
+                  <option value="__add_new__">+ Agregar nueva</option>
+                </select>
+              </label>
               <label>Link de grabación
                 <input type="url" name="recordingLink" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
               </label>
@@ -780,7 +801,7 @@ function renderFilterOptions() {
     .join('')}`;
   $('meetingPlaylistSelect').innerHTML = `<option value="">Sin lista de reproducción</option>${playlists
     .map((p) => `<option value="${p.id}">${p.name}</option>`)
-    .join('')}`;
+    .join('')}<option value="__add_new__">+ Agregar nueva</option>`;
   $('filterProvider').value = activeFilterProvider;
   $('filterParticipant').value = activeFilterParticipant;
   $('filterPlaylist').value = activeFilterPlaylist;
@@ -863,10 +884,20 @@ function todoCard(todo) {
   const currentPage = Math.min(todoTaskPageMap.get(todo.id) || 1, totalPages);
   const start = (currentPage - 1) * perPage;
   const visibleTasks = (todo.tasks || []).slice(start, start + perPage);
+  const isExpanded = expandedTodoId === todo.id;
+
   return `<article class="todo-item ${hasOverdue ? 'is-overdue' : ''}">
     ${todo.cover ? `<img class="todo-cover" src="${todo.cover}" alt="${todo.title}" />` : ''}
     <div class="todo-main">
-      <div class="todo-top"><strong>${todo.title}</strong>${completed ? '<span class="badge finished"><i class="bi bi-check2-circle"></i> Completado</span>' : ''}</div>
+      <div class="todo-top">
+        <strong>${todo.title}</strong>
+        <div class="todo-top-actions">
+          ${completed ? '<span class="badge finished"><i class="bi bi-check2-circle"></i> Completado</span>' : ''}
+          <button class="btn btn-pill btn-ghost btn-subtle" type="button" data-toggle-todo="${todo.id}">
+            <i class="bi ${isExpanded ? 'bi-chevron-up' : 'bi-chevron-down'}"></i> ${isExpanded ? 'Ocultar' : 'Abrir'}
+          </button>
+        </div>
+      </div>
       <div class="todo-meta">
         <span><i class="bi bi-list-task"></i> ${totalTasks} tareas</span>
         <span><i class="bi bi-check2-square"></i> ${completedTasks}/${totalTasks} avanzadas</span>
@@ -875,36 +906,41 @@ function todoCard(todo) {
       <div class="todo-progress">
         <div class="todo-progress-bar" style="width:${progress}%"></div>
       </div>
-      <div class="todo-checks">
-        ${visibleTasks
-          .map(
-            (task, idx) => `<div class="todo-task-row ${isTaskOverdue(task) ? 'is-overdue' : ''}">
-              <label class="todo-check">
-                <input type="checkbox" data-todo-task="${todo.id}" data-task-index="${start + idx}" ${task.done ? 'checked' : ''} />
-                <span>${task.title}</span>
-              </label>
-              <div class="todo-task-dates">
-                <span><i class="bi bi-calendar-range"></i> ${task.startDate || 'Sin desde'} → ${task.endDate || 'Sin hasta'}</span>
-              </div>
-              <div class="todo-task-actions">
-                ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
-                <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todo.id}" data-task-index="${start + idx}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
-              </div>
-            </div>`,
-          )
-          .join('')}
-      </div>
-      ${
-        totalPages > 1
-          ? `<div class="todo-pagination">
-              <button class="btn btn-pill btn-ghost btn-subtle" data-todo-page-prev="${todo.id}" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
-              <span>Página ${currentPage} de ${totalPages}</span>
-              <button class="btn btn-pill btn-ghost btn-subtle" data-todo-page-next="${todo.id}" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
-            </div>`
-          : ''
-      }
-      <div class="todo-actions">
-        <button class="btn btn-pill btn-ghost btn-subtle" data-delete-todo="${todo.id}"><i class="bi bi-trash3"></i> Eliminar</button>
+
+      <div class="todo-body ${isExpanded ? '' : 'hidden'}">
+        <div class="todo-checks">
+          ${visibleTasks
+            .map(
+              (task, idx) => `<div class="todo-task-row ${isTaskOverdue(task) ? 'is-overdue' : ''}">
+                <label class="todo-check">
+                  <input type="checkbox" data-todo-task="${todo.id}" data-task-index="${start + idx}" ${task.done ? 'checked' : ''} />
+                  <span>${task.title}</span>
+                </label>
+                ${task.comment ? `<div class="todo-task-comment"><i class="bi bi-chat-left-text"></i> ${task.comment}</div>` : ''}
+                <div class="todo-task-dates">
+                  <span><i class="bi bi-calendar-range"></i> ${task.startDate || 'Sin desde'} → ${task.endDate || 'Sin hasta'}</span>
+                </div>
+                <div class="todo-task-actions">
+                  ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
+                  <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todo.id}" data-task-index="${start + idx}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
+                </div>
+              </div>`,
+            )
+            .join('')}
+        </div>
+        ${
+          totalPages > 1
+            ? `<div class="todo-pagination">
+                <button class="btn btn-pill btn-ghost btn-subtle" data-todo-page-prev="${todo.id}" ${currentPage === 1 ? 'disabled' : ''}>Anterior</button>
+                <span>Página ${currentPage} de ${totalPages}</span>
+                <button class="btn btn-pill btn-ghost btn-subtle" data-todo-page-next="${todo.id}" ${currentPage === totalPages ? 'disabled' : ''}>Siguiente</button>
+              </div>`
+            : ''
+        }
+        <div class="todo-actions">
+          <button class="btn btn-pill btn-soft btn-subtle" data-edit-todo="${todo.id}"><i class="bi bi-pencil-square"></i> Editar módulo</button>
+          <button class="btn btn-pill btn-ghost btn-subtle" data-delete-todo="${todo.id}"><i class="bi bi-trash3"></i> Eliminar</button>
+        </div>
       </div>
     </div>
   </article>`;
@@ -913,9 +949,10 @@ function todoCard(todo) {
 function createTaskRow(task = {}) {
   return `<div class="task-form-row">
     <input type="text" data-task-field="title" placeholder="Título de tarea" value="${task.title || ''}" />
-    <input type="date" data-task-field="startDate" value="${task.startDate || ''}" />
-    <input type="date" data-task-field="endDate" value="${task.endDate || ''}" />
+    <input type="text" data-task-field="startDate" data-task-done="${task.done ? '1' : '0'}" value="${task.startDate || ''}" placeholder="Desde" />
+    <input type="text" data-task-field="endDate" value="${task.endDate || ''}" placeholder="Hasta" />
     <button type="button" class="btn btn-pill btn-ghost" data-remove-task-row><i class="bi bi-trash3"></i></button>
+    <input type="text" data-task-field="comment" value="${task.comment || ''}" placeholder="Comentario (opcional)" />
   </div>`;
 }
 
@@ -932,6 +969,10 @@ function initTodoTaskDatePickers() {
       locale: 'es',
       dateFormat: 'Y-m-d',
       allowInput: true,
+      appendTo: input.closest('.task-form-row') || $('todoModal'),
+      positionElement: input,
+      position: 'auto left',
+      disableMobile: true,
     });
   });
 }
@@ -942,7 +983,8 @@ function collectTodoTasksFromForm() {
       title: row.querySelector('[data-task-field="title"]')?.value.trim() || '',
       startDate: row.querySelector('[data-task-field="startDate"]')?.value || '',
       endDate: row.querySelector('[data-task-field="endDate"]')?.value || '',
-      done: false,
+      comment: row.querySelector('[data-task-field="comment"]')?.value.trim() || '',
+      done: row.querySelector('[data-task-field="startDate"]')?.dataset?.taskDone === '1',
     }))
     .filter((task) => task.title);
 }
@@ -970,9 +1012,10 @@ function normalizeExcelDate(value) {
 async function importTodoTasksFromXlsx() {
   const file = $('todoTasksXlsx').files?.[0];
   if (!file) {
-    await IOSSwal.fire({ icon: 'info', title: 'Seleccioná un archivo XLSX primero.' });
+    showTodoInlineMessage('Seleccioná un archivo XLSX primero.', 'warning');
     return;
   }
+  clearTodoInlineMessage();
   const buffer = await file.arrayBuffer();
   const workbook = globalThis.XLSX.read(buffer, { type: 'array' });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -985,20 +1028,17 @@ async function importTodoTasksFromXlsx() {
     }))
     .filter((row) => row.title);
   if (!mapped.length) {
-    await IOSSwal.fire({
-      icon: 'warning',
-      title: 'No encontré tareas válidas',
-      text: 'Usá columnas: Titulo | Desde | Hasta.',
-    });
+    showTodoInlineMessage('No encontré tareas válidas. Usá columnas: Titulo | Desde | Hasta.', 'warning');
     return;
   }
   renderTodoTaskRows(mapped);
-  await IOSSwal.fire({ icon: 'success', title: `${mapped.length} tareas importadas`, timer: 1200, showConfirmButton: false });
+  showTodoInlineMessage(`${mapped.length} tareas importadas correctamente.`, 'success');
 }
 
 function renderTodoList() {
   const list = $('todoList');
   if (!list) return;
+  if (expandedTodoId && !todos.some((todo) => todo.id === expandedTodoId)) expandedTodoId = null;
   list.innerHTML = todos.length ? todos.map(todoCard).join('') : '<p>No hay checklist creados.</p>';
 }
 
@@ -1017,7 +1057,7 @@ async function loadReferences() {
     tasks: Array.isArray(todo.tasks)
       ? todo.tasks
       : Array.isArray(todo.items)
-        ? todo.items.map((item) => ({ title: item.text || '', startDate: '', endDate: '', done: Boolean(item.done) }))
+        ? todo.items.map((item) => ({ title: item.text || '', startDate: '', endDate: '', comment: '', done: Boolean(item.done) }))
         : [],
   }));
   renderFilterOptions();
@@ -1180,6 +1220,7 @@ async function deletePlaylist(id) {
 
 async function onSaveTodo(e) {
   e.preventDefault();
+  clearTodoInlineMessage();
   const title = $('todoTitle').value.trim();
   const coverUrl = $('todoCover').value.trim();
   const coverFile = $('todoCoverFile').files?.[0];
@@ -1199,11 +1240,7 @@ async function onSaveTodo(e) {
     }
   }
   if (!tasks.length) {
-    await IOSSwal.fire({
-      icon: 'warning',
-      title: 'Faltan tareas',
-      text: 'Agregá al menos una tarea para guardar el módulo.',
-    });
+    showTodoInlineMessage('Faltan tareas: agregá al menos una para guardar el módulo.', 'warning');
     return;
   }
   const payload = { title, cover, tasks };
@@ -1220,6 +1257,19 @@ async function onSaveTodo(e) {
   await loadReferences();
 }
 
+function openTodoModuleEditor(id) {
+  const todo = todos.find((row) => row.id === id);
+  if (!todo) return;
+  editingTodoId = id;
+  $('todoTitle').value = todo.title || '';
+  $('todoCover').value = todo.cover || '';
+  $('todoCoverFile').value = '';
+  $('todoTasksXlsx').value = '';
+  clearTodoInlineMessage();
+  renderTodoTaskRows(todo.tasks || []);
+  $('todoModal').showModal();
+}
+
 async function editTodoTask(todoId, taskIndex) {
   const todo = todos.find((row) => row.id === todoId);
   const task = todo?.tasks?.[taskIndex];
@@ -1227,18 +1277,56 @@ async function editTodoTask(todoId, taskIndex) {
   const { value: data, isConfirmed } = await IOSSwal.fire({
     title: 'Editar tarea',
     html: `
-      <input id="swTaskTitle" class="swal2-input" placeholder="Título" value="${task.title || ''}" />
-      <input id="swTaskStart" class="swal2-input" type="date" value="${task.startDate || ''}" />
-      <input id="swTaskEnd" class="swal2-input" type="date" value="${task.endDate || ''}" />
+      <div class="sw-task-form">
+        <label class="sw-task-label">Título</label>
+        <input id="swTaskTitle" class="swal2-input sw-task-input" placeholder="Título" value="${task.title || ''}" />
+        <div class="sw-task-dates">
+          <div>
+            <label class="sw-task-label">Desde</label>
+            <input id="swTaskStart" class="swal2-input sw-task-input" type="text" value="${task.startDate || ''}" />
+          </div>
+          <div>
+            <label class="sw-task-label">Hasta</label>
+            <input id="swTaskEnd" class="swal2-input sw-task-input" type="text" value="${task.endDate || ''}" />
+          </div>
+        </div>
+        <label class="sw-task-label">Comentario</label>
+        <input id="swTaskComment" class="swal2-input sw-task-input" type="text" value="${task.comment || ''}" placeholder="Comentario opcional" />
+      </div>
     `,
     focusConfirm: false,
     showCancelButton: true,
     confirmButtonText: 'Guardar',
     cancelButtonText: 'Cancelar',
+    didOpen: () => {
+      const popup = Swal.getPopup();
+      if (!popup || typeof flatpickr !== 'function') return;
+      const startInput = popup.querySelector('#swTaskStart');
+      const endInput = popup.querySelector('#swTaskEnd');
+      if (startInput && !startInput._flatpickr) {
+        flatpickr(startInput, {
+          locale: 'es',
+          dateFormat: 'Y-m-d',
+          allowInput: true,
+          disableMobile: true,
+          static: true,
+        });
+      }
+      if (endInput && !endInput._flatpickr) {
+        flatpickr(endInput, {
+          locale: 'es',
+          dateFormat: 'Y-m-d',
+          allowInput: true,
+          disableMobile: true,
+          static: true,
+        });
+      }
+    },
     preConfirm: () => ({
       title: document.getElementById('swTaskTitle')?.value.trim() || '',
       startDate: document.getElementById('swTaskStart')?.value || '',
       endDate: document.getElementById('swTaskEnd')?.value || '',
+      comment: document.getElementById('swTaskComment')?.value.trim() || '',
     }),
   });
   if (!isConfirmed || !data?.title) return;
@@ -1248,7 +1336,8 @@ async function editTodoTask(todoId, taskIndex) {
     title: data.title,
     startDate: data.startDate,
     endDate: data.endDate,
-    done: false,
+    comment: data.comment,
+    done: tasks[taskIndex]?.done || false,
   };
   await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
   await loadReferences();
@@ -1541,8 +1630,16 @@ async function finishMeetingNow(id) {
 async function savePostMeeting(id) {
   const linkInput = document.querySelector(`[data-recording-link="${id}"]`);
   const commentInput = document.querySelector(`[data-post-comment="${id}"]`);
-  if (!linkInput || !commentInput) return;
+  const playlistSelect = document.querySelector(`[data-post-playlist="${id}"]`);
+  if (!linkInput || !commentInput || !playlistSelect) return;
+  if (playlistSelect.value === '__add_new__') {
+    openPlaylistsModal();
+    return;
+  }
+  const selected = playlists.find((playlist) => playlist.id === playlistSelect.value);
   await update(ref(rtdb, `meetings/${id}`), {
+    playlistId: selected?.id || '',
+    playlistName: selected?.name || '',
     recordingLink: linkInput.value.trim(),
     postComment: commentInput.value.trim(),
     updatedAt: new Date().toISOString(),
@@ -1681,12 +1778,6 @@ function bindPickerEvents(type) {
 }
 
 function bindEvents() {
-  document.querySelectorAll('.brand-logo').forEach((logo) => {
-    logo.addEventListener('click', () => {
-      window.location.href = './index.html';
-    });
-  });
-
   $('openMeetingForm').addEventListener('click', async () => {
     const isCollapsed = $('meetingFormSection').classList.contains('collapsed');
     if (isCollapsed) {
@@ -1703,6 +1794,11 @@ function bindEvents() {
   $('openParticipantsModal').addEventListener('click', () => openParticipantModal());
   $('openPlaylistsModal').addEventListener('click', () => openPlaylistsModal());
   $('addPlaylistInline').addEventListener('click', () => openPlaylistsModal());
+  $('meetingPlaylistSelect').addEventListener('change', (e) => {
+    if (e.target.value !== '__add_new__') return;
+    e.target.value = '';
+    openPlaylistsModal();
+  });
   $('openSlackConfigModal').addEventListener('click', async () => {
     await loadSlackSettings();
     $('slackConfigModal').showModal();
@@ -1727,6 +1823,7 @@ function bindEvents() {
     $('todoForm').reset();
     $('todoTasksXlsx').value = '';
     $('todoCoverFile').value = '';
+    clearTodoInlineMessage();
     renderTodoTaskRows();
   });
 
@@ -1763,6 +1860,7 @@ function bindEvents() {
     $('todoForm').reset();
     $('todoTasksXlsx').value = '';
     $('todoCoverFile').value = '';
+    clearTodoInlineMessage();
     renderTodoTaskRows();
     $('todoModal').showModal();
   });
@@ -1861,7 +1959,17 @@ function bindEvents() {
     if (!e.target.closest('[data-remove-task-row]')) return;
     const rows = Array.from(document.querySelectorAll('#todoTaskRows .task-form-row'));
     if (rows.length <= 1) return;
-    e.target.closest('.task-form-row')?.remove();
+    IOSSwal.fire({
+      title: '¿Eliminar tarea?',
+      text: 'Esta fila se quitará del módulo.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+    }).then((result) => {
+      if (!result.isConfirmed) return;
+      e.target.closest('.task-form-row')?.remove();
+    });
   });
 
   $('prevPage').addEventListener('click', async () => {
@@ -1876,6 +1984,14 @@ function bindEvents() {
   $('scrollUpBtn').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
   $('scrollDownBtn').addEventListener('click', () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
 
+  meetingsList.addEventListener('change', (e) => {
+    const playlistSelect = e.target.closest('[data-post-playlist]');
+    if (!playlistSelect) return;
+    if (playlistSelect.value !== '__add_new__') return;
+    playlistSelect.value = '';
+    openPlaylistsModal();
+  });
+
   meetingsList.addEventListener('click', async (e) => {
     if (e.target.closest('[data-retry-fetch]')) {
       await fetchMeetings({ forceRefresh: true });
@@ -1888,7 +2004,6 @@ function bindEvents() {
     const idCopyLink = e.target.closest('[data-copy-link]')?.dataset?.copyLink;
     const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     const idSavePost = e.target.closest('[data-save-post]')?.dataset?.savePost;
-    const idFinishedPlaylist = e.target.closest('[data-edit-finished-playlist]')?.dataset?.editFinishedPlaylist;
     const idTogglePost = e.target.closest('[data-toggle-post]')?.dataset?.togglePost;
     const idOpenRecording = e.target.closest('[data-open-recording]')?.dataset?.openRecording;
     const idCopyRecording = e.target.closest('[data-copy-recording]')?.dataset?.copyRecording;
@@ -1905,7 +2020,6 @@ function bindEvents() {
       scrollToMeetingForm();
     }
     if (idDelete) await deleteMeeting(idDelete);
-    if (idFinishedPlaylist) await editFinishedMeetingPlaylist(idFinishedPlaylist);
     if (idCopyLink) {
       const row = filteredMeetings.find((m) => m.id === idCopyLink);
       if (row?.link) await copyToClipboard(row.link, 'Link copiado al portapapeles.');
@@ -1927,11 +2041,22 @@ function bindEvents() {
 
   $('todoList').addEventListener('click', async (e) => {
     const deleteId = e.target.closest('[data-delete-todo]')?.dataset?.deleteTodo;
+    const editId = e.target.closest('[data-edit-todo]')?.dataset?.editTodo;
+    const toggleId = e.target.closest('[data-toggle-todo]')?.dataset?.toggleTodo;
     const pagePrev = e.target.closest('[data-todo-page-prev]')?.dataset?.todoPagePrev;
     const pageNext = e.target.closest('[data-todo-page-next]')?.dataset?.todoPageNext;
     const taskEditBtn = e.target.closest('[data-edit-task]');
     const todoId = taskEditBtn?.dataset?.editTask;
     const taskIndex = Number(taskEditBtn?.dataset?.taskIndex);
+    if (toggleId) {
+      expandedTodoId = expandedTodoId === toggleId ? null : toggleId;
+      renderTodoList();
+      return;
+    }
+    if (editId) {
+      openTodoModuleEditor(editId);
+      return;
+    }
     if (pagePrev) {
       todoTaskPageMap.set(pagePrev, Math.max((todoTaskPageMap.get(pagePrev) || 1) - 1, 1));
       renderTodoList();
@@ -1943,8 +2068,18 @@ function bindEvents() {
       return;
     }
     if (deleteId) {
+      const result = await IOSSwal.fire({
+        title: '¿Eliminar módulo?',
+        text: 'Se eliminará el checklist completo.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+      });
+      if (!result.isConfirmed) return;
       await remove(ref(rtdb, `todos/${deleteId}`));
       todoTaskPageMap.delete(deleteId);
+      if (expandedTodoId === deleteId) expandedTodoId = null;
       await loadReferences();
       return;
     }

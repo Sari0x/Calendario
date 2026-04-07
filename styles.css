@@ -232,10 +232,18 @@ textarea {
   border: 1px solid transparent;
   cursor: pointer;
   font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
   transition: transform 0.12s ease, background-color 0.2s ease;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.sharepoint-logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
 }
 
 .btn:active {
@@ -1625,6 +1633,11 @@ textarea {
   .menu-actions .btn i {
     margin: 0;
     font-size: 18px;
+  }
+
+  .menu-actions .btn .sharepoint-logo {
+    width: 18px;
+    height: 18px;
   }
 
   .menu-separator {

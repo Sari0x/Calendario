@@ -201,6 +201,22 @@ function meetingStatus(meeting) {
   return 'upcoming';
 }
 
+function parseRecordingLinks(rawValue) {
+  const text = String(rawValue || '').trim();
+  if (!text) return [];
+  const matchedLinks = text.match(/https?:\/\/[^\s,;]+/gi) || [];
+  return matchedLinks
+    .map((url) => url.replace(/[)\]}.,!?]+$/g, '').trim())
+    .filter(Boolean);
+}
+
+function getMeetingRecordingLinks(meeting) {
+  const list = Array.isArray(meeting?.recordingLinks) ? meeting.recordingLinks : [];
+  const normalizedList = list.map((item) => String(item || '').trim()).filter(Boolean);
+  if (normalizedList.length) return normalizedList;
+  return parseRecordingLinks(meeting?.recordingLink || '');
+}
+
 function getWeekRange(baseDate = new Date()) {
   const date = new Date(baseDate);
   const day = date.getDay();
@@ -571,7 +587,8 @@ function meetingCard(meeting) {
   }
   const isFinishing = pendingFinishMeetingIds.has(meeting.id);
   const isPostExpanded = expandedPostMeetingIds.has(meeting.id);
-  const hasRecording = Boolean((meeting.recordingLink || '').trim());
+  const recordingLinks = getMeetingRecordingLinks(meeting);
+  const hasRecording = recordingLinks.length > 0;
   const playlistBadge = meeting.playlistName
     ? `<span class="badge playlist"><i class="bi bi-collection-play"></i> ${meeting.playlistName}</span>`
     : '';
@@ -624,12 +641,18 @@ function meetingCard(meeting) {
             </div>
             ${
               hasRecording
-                ? `<div class="recording-preview">
-                    <button class="btn btn-pill rec-pill" data-open-recording="${meeting.id}"><span class="rec-dot"></span> REC</button>
-                    <span class="recording-label">Grabación cargada</span>
-                    <button class="btn btn-pill btn-ghost btn-subtle" data-open-recording="${meeting.id}"><i class="bi bi-box-arrow-up-right"></i> Abrir</button>
-                    <button class="btn btn-pill btn-ghost btn-subtle" data-copy-recording="${meeting.id}"><i class="bi bi-copy"></i> Copiar</button>
-                  </div>`
+                ? recordingLinks
+                    .map((recordingLink, index) => {
+                      const recordingNumber = index + 1;
+                      const label = recordingLinks.length === 1 ? 'Grabación cargada' : `Grabación ${recordingNumber} cargada`;
+                      return `<div class="recording-preview">
+                        <button class="btn btn-pill rec-pill" data-open-recording="${meeting.id}" data-recording-index="${index}"><span class="rec-dot"></span> REC</button>
+                        <span class="recording-label">${label}</span>
+                        <button class="btn btn-pill btn-ghost btn-subtle" data-open-recording="${meeting.id}" data-recording-index="${index}"><i class="bi bi-box-arrow-up-right"></i> Abrir</button>
+                        <button class="btn btn-pill btn-ghost btn-subtle" data-copy-recording="${meeting.id}" data-recording-index="${index}"><i class="bi bi-copy"></i> Copiar</button>
+                      </div>`;
+                    })
+                    .join('')
                 : '<span class="recording-empty"><i class="bi bi-camera-reels"></i> Sin grabación cargada</span>'
             }
             <div class="post-fields ${isPostExpanded ? '' : 'hidden'}">
@@ -640,9 +663,25 @@ function meetingCard(meeting) {
                   <option value="__add_new__">+ Agregar nueva</option>
                 </select>
               </label>
-              <label>Link de grabación
-                <input type="url" name="recordingLink" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
-              </label>
+              <div class="recording-inputs" data-recording-list="${meeting.id}">
+                ${(recordingLinks.length ? recordingLinks : [''])
+                  .map(
+                    (recordingLink, index) => `<label>Link de grabación${index === 0 ? '' : ` ${index + 1}`}
+                  <div class="recording-input-row">
+                    <input type="url" name="recordingLink" data-recording-link-item="${meeting.id}" value="${recordingLink || ''}" placeholder="https://..." />
+                    ${
+                      index > 0
+                        ? `<button type="button" class="btn btn-pill btn-ghost btn-subtle" data-remove-recording-input="${meeting.id}" data-recording-index="${index}"><i class="bi bi-dash-circle"></i></button>`
+                        : ''
+                    }
+                  </div>
+                </label>`,
+                  )
+                  .join('')}
+              </div>
+              <button type="button" class="btn btn-pill btn-ghost btn-subtle" data-add-recording-input="${meeting.id}">
+                <i class="bi bi-plus-circle"></i> Agregar link de grabación
+              </button>
               <label>Comentario post reunión
                 <textarea rows="2" name="postComment" data-post-comment="${meeting.id}" placeholder="Notas finales...">${meeting.postComment || ''}</textarea>
               </label>
@@ -1631,19 +1670,21 @@ async function finishMeetingNow(id) {
 }
 
 async function savePostMeeting(id) {
-  const linkInput = document.querySelector(`[data-recording-link="${id}"]`);
+  const linkInputs = Array.from(document.querySelectorAll(`[data-recording-link-item="${id}"]`));
   const commentInput = document.querySelector(`[data-post-comment="${id}"]`);
   const playlistSelect = document.querySelector(`[data-post-playlist="${id}"]`);
-  if (!linkInput || !commentInput || !playlistSelect) return;
+  if (!commentInput || !playlistSelect) return;
   if (playlistSelect.value === '__add_new__') {
     openPlaylistsModal();
     return;
   }
+  const recordingLinks = linkInputs.map((input) => input.value.trim()).filter(Boolean);
   const selected = playlists.find((playlist) => playlist.id === playlistSelect.value);
   await update(ref(rtdb, `meetings/${id}`), {
     playlistId: selected?.id || '',
     playlistName: selected?.name || '',
-    recordingLink: linkInput.value.trim(),
+    recordingLinks,
+    recordingLink: recordingLinks[0] || '',
     postComment: commentInput.value.trim(),
     updatedAt: new Date().toISOString(),
   });
@@ -2008,8 +2049,17 @@ function bindEvents() {
     const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     const idSavePost = e.target.closest('[data-save-post]')?.dataset?.savePost;
     const idTogglePost = e.target.closest('[data-toggle-post]')?.dataset?.togglePost;
-    const idOpenRecording = e.target.closest('[data-open-recording]')?.dataset?.openRecording;
-    const idCopyRecording = e.target.closest('[data-copy-recording]')?.dataset?.copyRecording;
+    const openRecordingBtn = e.target.closest('[data-open-recording]');
+    const copyRecordingBtn = e.target.closest('[data-copy-recording]');
+    const addRecordingInputBtn = e.target.closest('[data-add-recording-input]');
+    const removeRecordingInputBtn = e.target.closest('[data-remove-recording-input]');
+    const idOpenRecording = openRecordingBtn?.dataset?.openRecording;
+    const idCopyRecording = copyRecordingBtn?.dataset?.copyRecording;
+    const openRecordingIndex = Number(openRecordingBtn?.dataset?.recordingIndex ?? 0);
+    const copyRecordingIndex = Number(copyRecordingBtn?.dataset?.recordingIndex ?? 0);
+    const idAddRecordingInput = addRecordingInputBtn?.dataset?.addRecordingInput;
+    const idRemoveRecordingInput = removeRecordingInputBtn?.dataset?.removeRecordingInput;
+    const removeRecordingIndex = Number(removeRecordingInputBtn?.dataset?.recordingIndex ?? -1);
     if (idTogglePost) {
       if (expandedPostMeetingIds.has(idTogglePost)) expandedPostMeetingIds.delete(idTogglePost);
       else expandedPostMeetingIds.add(idTogglePost);
@@ -2018,6 +2068,44 @@ function bindEvents() {
     }
     if (idRes) await rescheduleMeeting(idRes);
     if (idFinish) await finishMeetingNow(idFinish);
+    if (idAddRecordingInput) {
+      const list = document.querySelector(`[data-recording-list="${idAddRecordingInput}"]`);
+      if (!list) return;
+      const nextIndex = list.querySelectorAll(`[data-recording-link-item="${idAddRecordingInput}"]`).length;
+      const wrapper = document.createElement('label');
+      wrapper.innerHTML = `Link de grabación ${nextIndex + 1}
+        <div class="recording-input-row">
+          <input type="url" name="recordingLink" data-recording-link-item="${idAddRecordingInput}" value="" placeholder="https://..." />
+          <button type="button" class="btn btn-pill btn-ghost btn-subtle" data-remove-recording-input="${idAddRecordingInput}" data-recording-index="${nextIndex}"><i class="bi bi-dash-circle"></i></button>
+        </div>`;
+      list.appendChild(wrapper);
+      return;
+    }
+    if (idRemoveRecordingInput) {
+      const list = document.querySelector(`[data-recording-list="${idRemoveRecordingInput}"]`);
+      if (!list) return;
+      const labels = Array.from(list.querySelectorAll('label'));
+      if (removeRecordingIndex <= 0 || removeRecordingIndex >= labels.length) return;
+      labels[removeRecordingIndex]?.remove();
+      Array.from(list.querySelectorAll('label')).forEach((label, index) => {
+        const input = label.querySelector(`[data-recording-link-item="${idRemoveRecordingInput}"]`);
+        const removeBtn = label.querySelector(`[data-remove-recording-input="${idRemoveRecordingInput}"]`);
+        label.childNodes[0].textContent = `Link de grabación${index === 0 ? '' : ` ${index + 1}`}`;
+        if (removeBtn) {
+          if (index === 0) removeBtn.remove();
+          else removeBtn.dataset.recordingIndex = String(index);
+        } else if (index > 0 && input?.parentElement) {
+          const newBtn = document.createElement('button');
+          newBtn.type = 'button';
+          newBtn.className = 'btn btn-pill btn-ghost btn-subtle';
+          newBtn.dataset.removeRecordingInput = idRemoveRecordingInput;
+          newBtn.dataset.recordingIndex = String(index);
+          newBtn.innerHTML = '<i class="bi bi-dash-circle"></i>';
+          input.parentElement.appendChild(newBtn);
+        }
+      });
+      return;
+    }
     if (idEdit) {
       loadMeetingToForm(idEdit);
       scrollToMeetingForm();
@@ -2033,11 +2121,15 @@ function bindEvents() {
     }
     if (idOpenRecording) {
       const row = filteredMeetings.find((m) => m.id === idOpenRecording);
-      if (row?.recordingLink) window.open(row.recordingLink, '_blank', 'noopener,noreferrer');
+      const recordingLinks = getMeetingRecordingLinks(row);
+      const selectedLink = recordingLinks[Number.isNaN(openRecordingIndex) ? 0 : openRecordingIndex];
+      if (selectedLink) window.open(selectedLink, '_blank', 'noopener,noreferrer');
     }
     if (idCopyRecording) {
       const row = filteredMeetings.find((m) => m.id === idCopyRecording);
-      if (row?.recordingLink) await copyToClipboard(row.recordingLink, 'Link de grabación copiado.');
+      const recordingLinks = getMeetingRecordingLinks(row);
+      const selectedLink = recordingLinks[Number.isNaN(copyRecordingIndex) ? 0 : copyRecordingIndex];
+      if (selectedLink) await copyToClipboard(selectedLink, 'Link de grabación copiado.');
     }
     if (idSavePost) await savePostMeeting(idSavePost);
   });

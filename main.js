@@ -201,6 +201,15 @@ function meetingStatus(meeting) {
   return 'upcoming';
 }
 
+function parseRecordingLinks(rawValue) {
+  const text = String(rawValue || '').trim();
+  if (!text) return [];
+  const matchedLinks = text.match(/https?:\/\/[^\s,;]+/gi) || [];
+  return matchedLinks
+    .map((url) => url.replace(/[)\]}.,!?]+$/g, '').trim())
+    .filter(Boolean);
+}
+
 function getWeekRange(baseDate = new Date()) {
   const date = new Date(baseDate);
   const day = date.getDay();
@@ -571,7 +580,8 @@ function meetingCard(meeting) {
   }
   const isFinishing = pendingFinishMeetingIds.has(meeting.id);
   const isPostExpanded = expandedPostMeetingIds.has(meeting.id);
-  const hasRecording = Boolean((meeting.recordingLink || '').trim());
+  const recordingLinks = parseRecordingLinks(meeting.recordingLink);
+  const hasRecording = recordingLinks.length > 0;
   const playlistBadge = meeting.playlistName
     ? `<span class="badge playlist"><i class="bi bi-collection-play"></i> ${meeting.playlistName}</span>`
     : '';
@@ -624,12 +634,18 @@ function meetingCard(meeting) {
             </div>
             ${
               hasRecording
-                ? `<div class="recording-preview">
-                    <button class="btn btn-pill rec-pill" data-open-recording="${meeting.id}"><span class="rec-dot"></span> REC</button>
-                    <span class="recording-label">Grabación cargada</span>
-                    <button class="btn btn-pill btn-ghost btn-subtle" data-open-recording="${meeting.id}"><i class="bi bi-box-arrow-up-right"></i> Abrir</button>
-                    <button class="btn btn-pill btn-ghost btn-subtle" data-copy-recording="${meeting.id}"><i class="bi bi-copy"></i> Copiar</button>
-                  </div>`
+                ? recordingLinks
+                    .map((recordingLink, index) => {
+                      const recordingNumber = index + 1;
+                      const label = recordingLinks.length === 1 ? 'Grabación cargada' : `Grabación ${recordingNumber} cargada`;
+                      return `<div class="recording-preview">
+                        <button class="btn btn-pill rec-pill" data-open-recording="${meeting.id}" data-recording-index="${index}"><span class="rec-dot"></span> REC</button>
+                        <span class="recording-label">${label}</span>
+                        <button class="btn btn-pill btn-ghost btn-subtle" data-open-recording="${meeting.id}" data-recording-index="${index}"><i class="bi bi-box-arrow-up-right"></i> Abrir</button>
+                        <button class="btn btn-pill btn-ghost btn-subtle" data-copy-recording="${meeting.id}" data-recording-index="${index}"><i class="bi bi-copy"></i> Copiar</button>
+                      </div>`;
+                    })
+                    .join('')
                 : '<span class="recording-empty"><i class="bi bi-camera-reels"></i> Sin grabación cargada</span>'
             }
             <div class="post-fields ${isPostExpanded ? '' : 'hidden'}">
@@ -641,7 +657,7 @@ function meetingCard(meeting) {
                 </select>
               </label>
               <label>Link de grabación
-                <input type="url" name="recordingLink" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://..." />
+                <input type="text" name="recordingLink" data-recording-link="${meeting.id}" value="${meeting.recordingLink || ''}" placeholder="https://... (podés pegar más de uno)" />
               </label>
               <label>Comentario post reunión
                 <textarea rows="2" name="postComment" data-post-comment="${meeting.id}" placeholder="Notas finales...">${meeting.postComment || ''}</textarea>
@@ -2008,8 +2024,12 @@ function bindEvents() {
     const idCopySummary = e.target.closest('[data-copy-summary]')?.dataset?.copySummary;
     const idSavePost = e.target.closest('[data-save-post]')?.dataset?.savePost;
     const idTogglePost = e.target.closest('[data-toggle-post]')?.dataset?.togglePost;
-    const idOpenRecording = e.target.closest('[data-open-recording]')?.dataset?.openRecording;
-    const idCopyRecording = e.target.closest('[data-copy-recording]')?.dataset?.copyRecording;
+    const openRecordingBtn = e.target.closest('[data-open-recording]');
+    const copyRecordingBtn = e.target.closest('[data-copy-recording]');
+    const idOpenRecording = openRecordingBtn?.dataset?.openRecording;
+    const idCopyRecording = copyRecordingBtn?.dataset?.copyRecording;
+    const openRecordingIndex = Number(openRecordingBtn?.dataset?.recordingIndex ?? 0);
+    const copyRecordingIndex = Number(copyRecordingBtn?.dataset?.recordingIndex ?? 0);
     if (idTogglePost) {
       if (expandedPostMeetingIds.has(idTogglePost)) expandedPostMeetingIds.delete(idTogglePost);
       else expandedPostMeetingIds.add(idTogglePost);
@@ -2033,11 +2053,15 @@ function bindEvents() {
     }
     if (idOpenRecording) {
       const row = filteredMeetings.find((m) => m.id === idOpenRecording);
-      if (row?.recordingLink) window.open(row.recordingLink, '_blank', 'noopener,noreferrer');
+      const recordingLinks = parseRecordingLinks(row?.recordingLink);
+      const selectedLink = recordingLinks[Number.isNaN(openRecordingIndex) ? 0 : openRecordingIndex];
+      if (selectedLink) window.open(selectedLink, '_blank', 'noopener,noreferrer');
     }
     if (idCopyRecording) {
       const row = filteredMeetings.find((m) => m.id === idCopyRecording);
-      if (row?.recordingLink) await copyToClipboard(row.recordingLink, 'Link de grabación copiado.');
+      const recordingLinks = parseRecordingLinks(row?.recordingLink);
+      const selectedLink = recordingLinks[Number.isNaN(copyRecordingIndex) ? 0 : copyRecordingIndex];
+      if (selectedLink) await copyToClipboard(selectedLink, 'Link de grabación copiado.');
     }
     if (idSavePost) await savePostMeeting(idSavePost);
   });

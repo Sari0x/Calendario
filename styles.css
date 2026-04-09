@@ -866,6 +866,7 @@ textarea {
   padding: 0;
   width: min(440px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
+  position: relative;
 }
 
 .modal::backdrop {
@@ -894,6 +895,12 @@ textarea {
 #todoModal .modal-content {
   max-height: 86vh;
   overflow-y: auto;
+}
+
+#todoModal .swal2-container {
+  position: absolute !important;
+  inset: 0;
+  z-index: 100020 !important;
 }
 
 .modal-actions {
@@ -969,9 +976,10 @@ textarea {
 .todo-item {
   border: 1px solid var(--border);
   border-radius: 18px;
-  overflow: hidden;
+  overflow: visible;
   background: #fff;
   width: 100%;
+  position: relative;
 }
 
 .todo-item.is-overdue {
@@ -983,6 +991,8 @@ textarea {
   width: 100%;
   height: 140px;
   object-fit: cover;
+  display: block;
+  border-radius: 18px 18px 0 0;
 }
 
 .todo-main {
@@ -1046,6 +1056,15 @@ textarea {
   padding: 8px;
   display: grid;
   gap: 6px;
+  position: relative;
+  overflow: visible;
+}
+
+.todo-task-row.is-editing {
+  border-color: #7e8cff;
+  background: #f7f8ff;
+  box-shadow: 0 0 0 2px #dfe3ff;
+  z-index: 20;
 }
 
 .todo-task-row.is-overdue {
@@ -1054,18 +1073,44 @@ textarea {
   border-color: #d2d2dc;
 }
 
+.todo-task-row.is-editing.is-overdue {
+  background: #f7f8ff;
+  color: var(--text);
+  border-color: #7e8cff;
+}
+
 .todo-task-dates {
   font-size: 12px;
   color: var(--muted);
 }
 
-.todo-task-comment {
-  font-size: 12px;
+.todo-task-comment-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.todo-task-comment-wrap .bi {
   color: #2f8f4e;
-  font-style: italic;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  margin-top: 8px;
+}
+
+.todo-task-comment {
+  width: 100%;
+  min-height: 72px;
+  max-height: 108px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid #caead4;
+  background: #f2fbf5;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #2f8f4e;
+  font-style: normal;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  cursor: default;
+  user-select: text;
 }
 
 .todo-task-actions {
@@ -1073,6 +1118,106 @@ textarea {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.todo-task-editing-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.todo-editing-badge,
+.todo-task-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.todo-editing-badge {
+  background: #e5e9ff;
+  color: #3551d8;
+}
+
+.todo-task-state {
+  background: #eef1f4;
+  color: #5a6170;
+}
+
+.todo-task-editor-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.todo-task-editor-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.todo-task-editor-dates .flatpickr-wrapper {
+  position: relative;
+  z-index: 40;
+}
+
+.todo-task-editor-dates .flatpickr-calendar {
+  z-index: 100020 !important;
+}
+
+.todo-inline-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4d5465;
+}
+
+.todo-task-inline-input,
+.todo-task-inline-textarea {
+  width: 100%;
+  border: 1px solid #ccd5e4;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  padding: 10px 12px;
+}
+
+.todo-task-inline-input:focus,
+.todo-task-inline-textarea:focus {
+  outline: none;
+  border-color: #6a7aff;
+  box-shadow: 0 0 0 3px rgba(95, 91, 255, 0.14);
+}
+
+.todo-task-inline-textarea {
+  min-height: 110px;
+  resize: vertical;
+  overflow-y: auto;
+}
+
+.todo-task-action-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-danger-soft {
+  border-color: #f4bcc4;
+  background: #fff1f3;
+  color: #cb2747;
+}
+
+.btn-danger-soft:hover {
+  border-color: #eb8d9d;
+  background: #ffe4e8;
 }
 
 .todo-task-flags {
@@ -1180,8 +1325,17 @@ textarea {
   min-width: 0;
 }
 
-.task-form-row input[data-task-field='comment'] {
+.task-form-row textarea[data-task-field='comment'] {
   grid-column: 1 / -1;
+  min-height: 84px;
+  resize: vertical;
+  overflow-y: auto;
+}
+
+.sw-task-textarea {
+  min-height: 110px !important;
+  resize: vertical;
+  overflow-y: auto !important;
 }
 
 @media (max-width: 1100px) {
@@ -1201,6 +1355,10 @@ textarea {
   .todo-task-import input[type='file'],
   .todo-task-import .btn {
     width: 100%;
+  }
+
+  .todo-task-editor-dates {
+    grid-template-columns: 1fr;
   }
 }
 

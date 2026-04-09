@@ -57,6 +57,7 @@ let editingPlaylistId = null;
 let editingTodoId = null;
 let expandedTodoId = null;
 const todoTaskPageMap = new Map();
+const todoTaskEditDrafts = new Map();
 let nearestMeetingId = null;
 let uiTickerInterval = null;
 const pendingFinishMeetingIds = new Set();
@@ -109,6 +110,36 @@ const IOSSwal = Swal.mixin({
     cancelButton: 'swal-ios-btn swal-ios-btn-cancel',
   },
 });
+
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      case "'":
+        return '&#39;';
+      default:
+        return char;
+    }
+  });
+}
+
+function fireTodoSwal(options = {}) {
+  const todoModal = $('todoModal');
+  if (todoModal?.open && !options.target) {
+    return IOSSwal.fire({
+      ...options,
+      target: todoModal,
+    });
+  }
+  return IOSSwal.fire(options);
+}
 
 function formatRuntimeError(error) {
   if (error instanceof Error) return error.message;
@@ -912,6 +943,94 @@ function isTaskOverdue(task) {
   return Date.now() > end.getTime();
 }
 
+function getTodoTaskDraftKey(todoId, taskIndex) {
+  return `${todoId}:${taskIndex}`;
+}
+
+function getTodoTaskDraft(todoId, taskIndex) {
+  return todoTaskEditDrafts.get(getTodoTaskDraftKey(todoId, taskIndex)) || null;
+}
+
+function syncTodoTaskDrafts() {
+  for (const key of todoTaskEditDrafts.keys()) {
+    const [todoId, rawIndex] = key.split(':');
+    const taskIndex = Number(rawIndex);
+    const todo = todos.find((row) => row.id === todoId);
+    if (!todo || Number.isNaN(taskIndex) || !todo.tasks?.[taskIndex]) {
+      todoTaskEditDrafts.delete(key);
+    }
+  }
+}
+
+function renderTodoTask(todoId, task, taskIndex) {
+  const draft = getTodoTaskDraft(todoId, taskIndex);
+  if (draft) {
+    return `<div class="todo-task-row is-editing ${isTaskOverdue(task) ? 'is-overdue' : ''}">
+      <div class="todo-task-editing-head">
+        <span class="todo-editing-badge"><i class="bi bi-pencil-square"></i> Modo edición</span>
+        <span class="todo-task-state">${task.done ? 'Completada' : 'Pendiente'}</span>
+      </div>
+      <div class="todo-task-editor-grid">
+        <label class="todo-inline-field">
+          <span>Título</span>
+          <input class="todo-task-inline-input" data-inline-task-field="title" data-inline-task="${todoId}" data-task-index="${taskIndex}" type="text" value="${escapeHtml(draft.title || '')}" />
+        </label>
+        <div class="todo-task-editor-dates">
+          <label class="todo-inline-field">
+            <span>Desde</span>
+            <input class="todo-task-inline-input" data-inline-task-field="startDate" data-inline-task="${todoId}" data-task-index="${taskIndex}" data-inline-task-date="1" type="text" value="${escapeHtml(draft.startDate || '')}" placeholder="Desde" />
+          </label>
+          <label class="todo-inline-field">
+            <span>Hasta</span>
+            <input class="todo-task-inline-input" data-inline-task-field="endDate" data-inline-task="${todoId}" data-task-index="${taskIndex}" data-inline-task-date="1" type="text" value="${escapeHtml(draft.endDate || '')}" placeholder="Hasta" />
+          </label>
+        </div>
+        <label class="todo-inline-field">
+          <span>Comentario</span>
+          <textarea class="todo-task-inline-textarea" data-inline-task-field="comment" data-inline-task="${todoId}" data-task-index="${taskIndex}" rows="4" placeholder="Comentario opcional">${escapeHtml(draft.comment || '')}</textarea>
+        </label>
+      </div>
+      <div class="todo-task-actions">
+        <div class="todo-task-flags">
+          ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
+        </div>
+        <div class="todo-task-action-buttons">
+          <button class="btn btn-pill btn-primary" data-save-task-edit="${todoId}" data-task-index="${taskIndex}" type="button"><i class="bi bi-check2"></i> Guardar</button>
+          <button class="btn btn-pill btn-ghost btn-subtle" data-cancel-task-edit="${todoId}" data-task-index="${taskIndex}" type="button"><i class="bi bi-x-lg"></i> Cancelar</button>
+          <button class="btn btn-pill btn-danger-soft" data-delete-task="${todoId}" data-task-index="${taskIndex}" type="button" aria-label="Eliminar tarea" title="Eliminar tarea"><i class="bi bi-trash3"></i></button>
+        </div>
+      </div>
+    </div>`;
+  }
+  return `<div class="todo-task-row ${isTaskOverdue(task) ? 'is-overdue' : ''}">
+    <label class="todo-check">
+      <input type="checkbox" data-todo-task="${todoId}" data-task-index="${taskIndex}" ${task.done ? 'checked' : ''} />
+      <span>${escapeHtml(task.title || '')}</span>
+    </label>
+    ${
+      task.comment
+        ? `<div class="todo-task-comment-wrap">
+            <i class="bi bi-chat-left-text"></i>
+            <div class="todo-task-comment" role="textbox" aria-readonly="true" aria-label="Comentario de la tarea">${escapeHtml(task.comment)}</div>
+          </div>`
+        : ''
+    }
+    <div class="todo-task-dates">
+      <span><i class="bi bi-calendar-range"></i> ${escapeHtml(task.startDate || 'Sin desde')} → ${escapeHtml(task.endDate || 'Sin hasta')}</span>
+    </div>
+    <div class="todo-task-actions">
+      <div class="todo-task-flags">
+        ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
+        ${task.comment ? '<span class="todo-comment-pill">Con comentarios</span>' : ''}
+      </div>
+      <div class="todo-task-action-buttons">
+        <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todoId}" data-task-index="${taskIndex}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
+        <button class="btn btn-pill btn-danger-soft" data-delete-task="${todoId}" data-task-index="${taskIndex}" type="button" aria-label="Eliminar tarea" title="Eliminar tarea"><i class="bi bi-trash3"></i></button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function todoCard(todo) {
   const progress = getTodoProgress(todo);
   const completed = progress === 100;
@@ -950,23 +1069,7 @@ function todoCard(todo) {
         <div class="todo-checks">
           ${visibleTasks
             .map(
-              (task, idx) => `<div class="todo-task-row ${isTaskOverdue(task) ? 'is-overdue' : ''}">
-                <label class="todo-check">
-                  <input type="checkbox" data-todo-task="${todo.id}" data-task-index="${start + idx}" ${task.done ? 'checked' : ''} />
-                  <span>${task.title}</span>
-                </label>
-                ${task.comment ? `<div class="todo-task-comment"><i class="bi bi-chat-left-text"></i> ${task.comment}</div>` : ''}
-                <div class="todo-task-dates">
-                  <span><i class="bi bi-calendar-range"></i> ${task.startDate || 'Sin desde'} → ${task.endDate || 'Sin hasta'}</span>
-                </div>
-                <div class="todo-task-actions">
-                  <div class="todo-task-flags">
-                    ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
-                    ${task.comment ? '<span class="todo-comment-pill">Con comentarios</span>' : ''}
-                  </div>
-                  <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todo.id}" data-task-index="${start + idx}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
-                </div>
-              </div>`,
+              (task, idx) => renderTodoTask(todo.id, task, start + idx),
             )
             .join('')}
         </div>
@@ -990,11 +1093,11 @@ function todoCard(todo) {
 
 function createTaskRow(task = {}) {
   return `<div class="task-form-row">
-    <input type="text" data-task-field="title" placeholder="Título de tarea" value="${task.title || ''}" />
-    <input type="text" data-task-field="startDate" data-task-done="${task.done ? '1' : '0'}" value="${task.startDate || ''}" placeholder="Desde" />
-    <input type="text" data-task-field="endDate" value="${task.endDate || ''}" placeholder="Hasta" />
+    <input type="text" data-task-field="title" placeholder="Título de tarea" value="${escapeHtml(task.title || '')}" />
+    <input type="text" data-task-field="startDate" data-task-done="${task.done ? '1' : '0'}" value="${escapeHtml(task.startDate || '')}" placeholder="Desde" />
+    <input type="text" data-task-field="endDate" value="${escapeHtml(task.endDate || '')}" placeholder="Hasta" />
     <button type="button" class="btn btn-pill btn-ghost" data-remove-task-row><i class="bi bi-trash3"></i></button>
-    <input type="text" data-task-field="comment" value="${task.comment || ''}" placeholder="Comentario (opcional)" />
+    <textarea data-task-field="comment" rows="3" placeholder="Comentario (opcional)">${escapeHtml(task.comment || '')}</textarea>
   </div>`;
 }
 
@@ -1006,6 +1109,20 @@ function renderTodoTaskRows(tasks = []) {
 
 function initTodoTaskDatePickers() {
   document.querySelectorAll('#todoTaskRows input[data-task-field="startDate"], #todoTaskRows input[data-task-field="endDate"]').forEach((input) => {
+    if (input._flatpickr) return;
+    flatpickr(input, {
+      locale: 'es',
+      dateFormat: 'Y-m-d',
+      allowInput: true,
+      disableMobile: true,
+      static: true,
+    });
+  });
+}
+
+function initInlineTodoTaskDatePickers() {
+  if (typeof flatpickr !== 'function') return;
+  document.querySelectorAll('#todoList input[data-inline-task-date]').forEach((input) => {
     if (input._flatpickr) return;
     flatpickr(input, {
       locale: 'es',
@@ -1079,8 +1196,10 @@ async function importTodoTasksFromXlsx() {
 function renderTodoList() {
   const list = $('todoList');
   if (!list) return;
+  syncTodoTaskDrafts();
   if (expandedTodoId && !todos.some((todo) => todo.id === expandedTodoId)) expandedTodoId = null;
   list.innerHTML = todos.length ? todos.map(todoCard).join('') : '<p>No hay checklist creados.</p>';
+  initInlineTodoTaskDatePickers();
 }
 
 async function loadReferences() {
@@ -1311,7 +1430,7 @@ function openTodoModuleEditor(id) {
   $('todoModal').showModal();
 }
 
-async function editTodoTask(todoId, taskIndex) {
+async function editTodoTaskLegacyModal(todoId, taskIndex) {
   const todo = todos.find((row) => row.id === todoId);
   const task = todo?.tasks?.[taskIndex];
   if (!todo || !task) return;
@@ -1321,19 +1440,19 @@ async function editTodoTask(todoId, taskIndex) {
     html: `
       <div class="sw-task-form">
         <label class="sw-task-label">Título</label>
-        <input id="swTaskTitle" class="swal2-input sw-task-input" placeholder="Título" value="${task.title || ''}" />
+        <input id="swTaskTitle" class="swal2-input sw-task-input" placeholder="Título" value="${escapeHtml(task.title || '')}" />
         <div class="sw-task-dates">
           <div>
             <label class="sw-task-label">Desde</label>
-            <input id="swTaskStart" class="swal2-input sw-task-input" type="text" value="${task.startDate || ''}" />
+            <input id="swTaskStart" class="swal2-input sw-task-input" type="text" value="${escapeHtml(task.startDate || '')}" />
           </div>
           <div>
             <label class="sw-task-label">Hasta</label>
-            <input id="swTaskEnd" class="swal2-input sw-task-input" type="text" value="${task.endDate || ''}" />
+            <input id="swTaskEnd" class="swal2-input sw-task-input" type="text" value="${escapeHtml(task.endDate || '')}" />
           </div>
         </div>
         <label class="sw-task-label">Comentario</label>
-        <input id="swTaskComment" class="swal2-input sw-task-input" type="text" value="${task.comment || ''}" placeholder="Comentario opcional" />
+        <textarea id="swTaskComment" class="swal2-textarea sw-task-input sw-task-textarea" rows="4" placeholder="Comentario opcional">${escapeHtml(task.comment || '')}</textarea>
       </div>
     `,
     focusConfirm: false,
@@ -1385,6 +1504,71 @@ async function editTodoTask(todoId, taskIndex) {
   await loadReferences();
 }
 
+async function deleteTodoTask(todoId, taskIndex) {
+  const todo = todos.find((row) => row.id === todoId);
+  const task = todo?.tasks?.[taskIndex];
+  if (!todo || !task) return;
+  const result = await fireTodoSwal({
+    title: '¿Eliminar tarea?',
+    text: `Se eliminará "${task.title || 'esta tarea'}" del módulo.`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, eliminar',
+    cancelButtonText: 'Cancelar',
+  });
+  if (!result.isConfirmed) return;
+  todoTaskEditDrafts.delete(getTodoTaskDraftKey(todoId, taskIndex));
+  const tasks = (todo.tasks || []).filter((_, index) => index !== taskIndex);
+  await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
+  await loadReferences();
+}
+
+function editTodoTask(todoId, taskIndex) {
+  const todo = todos.find((row) => row.id === todoId);
+  const task = todo?.tasks?.[taskIndex];
+  if (!todo || !task) return;
+  todoTaskEditDrafts.set(getTodoTaskDraftKey(todoId, taskIndex), {
+    title: task.title || '',
+    startDate: task.startDate || '',
+    endDate: task.endDate || '',
+    comment: task.comment || '',
+  });
+  renderTodoList();
+}
+
+function cancelTodoTaskEdit(todoId, taskIndex) {
+  todoTaskEditDrafts.delete(getTodoTaskDraftKey(todoId, taskIndex));
+  renderTodoList();
+}
+
+async function saveTodoTaskEdit(todoId, taskIndex) {
+  const todo = todos.find((row) => row.id === todoId);
+  const task = todo?.tasks?.[taskIndex];
+  const draft = getTodoTaskDraft(todoId, taskIndex);
+  if (!todo || !task || !draft) return;
+  const title = String(draft.title || '').trim();
+  if (!title) {
+    await IOSSwal.fire({
+      icon: 'warning',
+      title: 'Falta el título',
+      text: 'La tarea necesita un título para poder guardarse.',
+    });
+    return;
+  }
+  const tasks = [...todo.tasks];
+  tasks[taskIndex] = {
+    ...tasks[taskIndex],
+    title,
+    startDate: String(draft.startDate || '').trim(),
+    endDate: String(draft.endDate || '').trim(),
+    comment: String(draft.comment || '').trim(),
+    done: tasks[taskIndex]?.done || false,
+  };
+  todoTaskEditDrafts.delete(getTodoTaskDraftKey(todoId, taskIndex));
+  await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
+  await loadReferences();
+}
+
 function switchSection(section) {
   activeSection = section;
   const isHub = section === 'hub';
@@ -1402,6 +1586,7 @@ function switchSection(section) {
   $('openParticipantsModal').classList.toggle('hidden', !isHub);
   $('openPlaylistsModal').classList.toggle('hidden', !isHub);
   $('openSlackConfigModal').classList.toggle('hidden', !isHub);
+  $('openSharepointLink').classList.toggle('hidden', !isHub);
   document.querySelector('.menu-separator')?.classList.toggle('hidden', !isHub);
   renderTodoList();
 }
@@ -2003,7 +2188,7 @@ function bindEvents() {
     if (!e.target.closest('[data-remove-task-row]')) return;
     const rows = Array.from(document.querySelectorAll('#todoTaskRows .task-form-row'));
     if (rows.length <= 1) return;
-    IOSSwal.fire({
+    fireTodoSwal({
       title: '¿Eliminar tarea?',
       text: 'Esta fila se quitará del módulo.',
       icon: 'warning',
@@ -2141,8 +2326,17 @@ function bindEvents() {
     const pagePrev = e.target.closest('[data-todo-page-prev]')?.dataset?.todoPagePrev;
     const pageNext = e.target.closest('[data-todo-page-next]')?.dataset?.todoPageNext;
     const taskEditBtn = e.target.closest('[data-edit-task]');
+    const taskDeleteBtn = e.target.closest('[data-delete-task]');
+    const taskSaveBtn = e.target.closest('[data-save-task-edit]');
+    const taskCancelBtn = e.target.closest('[data-cancel-task-edit]');
     const todoId = taskEditBtn?.dataset?.editTask;
     const taskIndex = Number(taskEditBtn?.dataset?.taskIndex);
+    const deleteTaskTodoId = taskDeleteBtn?.dataset?.deleteTask;
+    const deleteTaskIndex = Number(taskDeleteBtn?.dataset?.taskIndex);
+    const saveTaskTodoId = taskSaveBtn?.dataset?.saveTaskEdit;
+    const saveTaskIndex = Number(taskSaveBtn?.dataset?.taskIndex);
+    const cancelTaskTodoId = taskCancelBtn?.dataset?.cancelTaskEdit;
+    const cancelTaskIndex = Number(taskCancelBtn?.dataset?.taskIndex);
     if (toggleId) {
       expandedTodoId = expandedTodoId === toggleId ? null : toggleId;
       renderTodoList();
@@ -2160,6 +2354,18 @@ function bindEvents() {
     if (pageNext) {
       todoTaskPageMap.set(pageNext, (todoTaskPageMap.get(pageNext) || 1) + 1);
       renderTodoList();
+      return;
+    }
+    if (saveTaskTodoId && !Number.isNaN(saveTaskIndex)) {
+      await saveTodoTaskEdit(saveTaskTodoId, saveTaskIndex);
+      return;
+    }
+    if (cancelTaskTodoId && !Number.isNaN(cancelTaskIndex)) {
+      cancelTodoTaskEdit(cancelTaskTodoId, cancelTaskIndex);
+      return;
+    }
+    if (deleteTaskTodoId && !Number.isNaN(deleteTaskIndex)) {
+      await deleteTodoTask(deleteTaskTodoId, deleteTaskIndex);
       return;
     }
     if (deleteId) {
@@ -2182,6 +2388,20 @@ function bindEvents() {
   });
 
   $('todoList').addEventListener('change', async (e) => {
+    const inlineTodoId = e.target?.dataset?.inlineTask;
+    const inlineField = e.target?.dataset?.inlineTaskField;
+    const inlineIndex = Number(e.target?.dataset?.taskIndex);
+    if (inlineTodoId && inlineField && !Number.isNaN(inlineIndex)) {
+      const key = getTodoTaskDraftKey(inlineTodoId, inlineIndex);
+      const currentDraft = getTodoTaskDraft(inlineTodoId, inlineIndex);
+      if (currentDraft) {
+        todoTaskEditDrafts.set(key, {
+          ...currentDraft,
+          [inlineField]: e.target.value,
+        });
+      }
+      return;
+    }
     const todoId = e.target?.dataset?.todoTask;
     const taskIndex = Number(e.target?.dataset?.taskIndex);
     if (!todoId || Number.isNaN(taskIndex)) return;
@@ -2192,6 +2412,20 @@ function bindEvents() {
     tasks[taskIndex] = { ...tasks[taskIndex], done: e.target.checked };
     await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
     await loadReferences();
+  });
+
+  $('todoList').addEventListener('input', (e) => {
+    const inlineTodoId = e.target?.dataset?.inlineTask;
+    const inlineField = e.target?.dataset?.inlineTaskField;
+    const inlineIndex = Number(e.target?.dataset?.taskIndex);
+    if (!inlineTodoId || !inlineField || Number.isNaN(inlineIndex)) return;
+    const key = getTodoTaskDraftKey(inlineTodoId, inlineIndex);
+    const currentDraft = getTodoTaskDraft(inlineTodoId, inlineIndex);
+    if (!currentDraft) return;
+    todoTaskEditDrafts.set(key, {
+      ...currentDraft,
+      [inlineField]: e.target.value,
+    });
   });
 }
 

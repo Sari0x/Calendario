@@ -209,8 +209,21 @@ function initials(name, lastName) {
   return `${(name?.[0] || '').toUpperCase()}${(lastName?.[0] || '').toUpperCase()}`;
 }
 
+function normalizeExternalUrl(rawUrl) {
+  const value = String(rawUrl || '').trim();
+  if (!value) return '';
+  if (/^[a-z][a-z\d+.-]*:/i.test(value)) return value;
+  if (value.startsWith('//')) return `https:${value}`;
+  if (/^[^\s/]+\.[^\s]+$/i.test(value)) return `https://${value}`;
+  return value;
+}
+
+function getMeetingLink(meeting) {
+  return normalizeExternalUrl(meeting?.link || '');
+}
+
 function parseLinkType(url) {
-  const low = (url || '').toLowerCase();
+  const low = normalizeExternalUrl(url).toLowerCase();
   if (low.includes('meet.google')) return 'meet';
   if (low.includes('zoom.us')) return 'zoom';
   if (low.includes('teams.microsoft') || low.includes('teams.live') || low.includes('team')) return 'teams';
@@ -238,12 +251,13 @@ function parseRecordingLinks(rawValue) {
   const matchedLinks = text.match(/https?:\/\/[^\s,;]+/gi) || [];
   return matchedLinks
     .map((url) => url.replace(/[)\]}.,!?]+$/g, '').trim())
+    .map(normalizeExternalUrl)
     .filter(Boolean);
 }
 
 function getMeetingRecordingLinks(meeting) {
   const list = Array.isArray(meeting?.recordingLinks) ? meeting.recordingLinks : [];
-  const normalizedList = list.map((item) => String(item || '').trim()).filter(Boolean);
+  const normalizedList = list.map((item) => normalizeExternalUrl(item)).filter(Boolean);
   if (normalizedList.length) return normalizedList;
   return parseRecordingLinks(meeting?.recordingLink || '');
 }
@@ -339,7 +353,15 @@ async function getMeetingsData({ forceRefresh = false } = {}) {
   if (!forceRefresh && meetingsCacheLoaded) {
     return [...meetingsCache];
   }
-  const rows = await loadCollection('meetings');
+  const rows = (await loadCollection('meetings')).map((row) => {
+    const recordingLinks = getMeetingRecordingLinks(row);
+    return {
+      ...row,
+      link: normalizeExternalUrl(row.link),
+      recordingLinks,
+      recordingLink: recordingLinks[0] || '',
+    };
+  });
   meetingsCache = rows;
   meetingsCacheLoaded = true;
   return [...meetingsCache];
@@ -456,7 +478,7 @@ function buildSlackPayload(meeting, options = {}) {
     meeting: {
       id: meeting.id || null,
       note: meeting.note || '',
-      link: meeting.link || '',
+      link: getMeetingLink(meeting),
       duration: meeting.duration || 60,
       startAt: meeting.startAt,
       providers: (meeting.providers || []).map((p) => p.name).join(', '),
@@ -1689,7 +1711,7 @@ async function onSaveMeeting() {
     duration: Number($('meetingDuration').value || 60),
     dateKey: startAt.toISOString().slice(0, 10),
     note: $('meetingNote').value.trim(),
-    link: $('meetingLink').value.trim(),
+    link: normalizeExternalUrl($('meetingLink').value),
     providers: providers.filter((p) => selectedProviderIds.includes(p.id)).map(({ id, name, image }) => ({ id, name, image })),
     participants: participants
       .filter((p) => selectedParticipantIds.includes(p.id))
@@ -1784,7 +1806,7 @@ function loadMeetingToForm(id) {
   $('meetingTime').value = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
   $('meetingDuration').value = String(row.duration || 60);
   $('meetingNote').value = row.note || '';
-  $('meetingLink').value = row.link || '';
+  $('meetingLink').value = getMeetingLink(row);
   $('notifySlack').checked = row.notifySlack !== false;
   $('slackReminderMinutes').value = String(row.slackReminderMinutes || 15);
   $('meetingPlaylistSelect').value = row.playlistId || '';
@@ -1863,7 +1885,7 @@ async function savePostMeeting(id) {
     openPlaylistsModal();
     return;
   }
-  const recordingLinks = linkInputs.map((input) => input.value.trim()).filter(Boolean);
+  const recordingLinks = linkInputs.map((input) => normalizeExternalUrl(input.value)).filter(Boolean);
   const selected = playlists.find((playlist) => playlist.id === playlistSelect.value);
   await update(ref(rtdb, `meetings/${id}`), {
     playlistId: selected?.id || '',
@@ -1935,7 +1957,7 @@ function buildMeetingSummary(meeting) {
   const providersSummary = (meeting.providers || []).map((p) => p.name).join(', ') || 'Sin proveedores';
   const participantsSummary = (meeting.participants || []).map((p) => `${p.name} ${p.lastName}`).join(', ') || 'Sin participantes';
   const when = esFmt.format(new Date(meeting.startAt));
-  return `📅 Reunión: ${when}\n⏱️ Duración: ${meeting.duration || 60} min\n📝 Nota: ${meeting.note || 'Sin nota'}\n👥 Participantes: ${participantsSummary}\n🏢 Proveedores: ${providersSummary}\n🔗 Link: ${meeting.link || 'Sin link'}`;
+  return `📅 Reunión: ${when}\n⏱️ Duración: ${meeting.duration || 60} min\n📝 Nota: ${meeting.note || 'Sin nota'}\n👥 Participantes: ${participantsSummary}\n🏢 Proveedores: ${providersSummary}\n🔗 Link: ${getMeetingLink(meeting) || 'Sin link'}`;
 }
 
 async function copyToClipboard(content, okMessage) {
@@ -2298,7 +2320,8 @@ function bindEvents() {
     if (idDelete) await deleteMeeting(idDelete);
     if (idCopyLink) {
       const row = filteredMeetings.find((m) => m.id === idCopyLink);
-      if (row?.link) await copyToClipboard(row.link, 'Link copiado al portapapeles.');
+      const meetingLink = getMeetingLink(row);
+      if (meetingLink) await copyToClipboard(meetingLink, 'Link copiado al portapapeles.');
     }
     if (idCopySummary) {
       const row = filteredMeetings.find((m) => m.id === idCopySummary);

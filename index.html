@@ -18,7 +18,7 @@
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@600;700&family=Montserrat:wght@600;800&family=Playfair+Display:wght@600;700&family=DM+Serif+Display&family=Merriweather:wght@700&family=Space+Grotesk:wght@600;700&family=Bebas+Neue&family=Caveat:wght@600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="./styles.css" />
@@ -143,7 +143,10 @@
       <section id="todoSection" class="card glass hidden">
         <div class="card-header wrap">
           <h2><i class="bi bi-list-check"></i> Novo To Do</h2>
-          <button id="openTodoModal" class="btn btn-pill btn-primary"><i class="bi bi-plus-circle"></i> Nuevo checklist</button>
+          <div class="header-actions">
+            <button id="exportTodoXlsx" class="btn btn-pill btn-soft"><i class="bi bi-file-earmark-excel"></i> Descargar Excel</button>
+            <button id="openTodoModal" class="btn btn-pill btn-primary"><i class="bi bi-plus-circle"></i> Nuevo checklist</button>
+          </div>
         </div>
         <div id="todoList" class="todo-list"></div>
       </section>
@@ -218,29 +221,57 @@
 
     <dialog id="todoModal" class="modal">
       <form id="todoForm" class="modal-content">
-        <h3>Nuevo módulo To Do</h3>
+        <h3 id="todoModalHeading">Nuevo módulo To Do</h3>
         <label>Módulo <input id="todoTitle" type="text" required placeholder="Ej: Softland integración" /></label>
-        <label>Portada (URL imagen)
-          <input id="todoCover" type="url" placeholder="https://..." />
-        </label>
-        <label>o Subir portada
-          <input id="todoCoverFile" type="file" accept="image/*" />
-        </label>
+        <div class="todo-font-field">
+          <label>Tipografía del título
+            <select id="todoTitleFont"></select>
+          </label>
+          <div id="todoTitleFontPreview" class="todo-font-preview">Título del módulo</div>
+        </div>
+        <div class="todo-cover-editor">
+          <strong>Portada</strong>
+          <div id="todoCoverTypeGroup" class="todo-segmented" role="radiogroup" aria-label="Tipo de portada">
+            <button type="button" class="todo-segment" data-cover-type="image" role="radio"><i class="bi bi-image"></i> Imagen</button>
+            <button type="button" class="todo-segment" data-cover-type="color" role="radio"><i class="bi bi-palette"></i> Color</button>
+            <button type="button" class="todo-segment" data-cover-type="none" role="radio"><i class="bi bi-slash-circle"></i> Sin portada</button>
+          </div>
+          <div id="todoCoverImageFields" class="todo-cover-fields">
+            <label>URL imagen
+              <input id="todoCover" type="url" placeholder="https://..." />
+            </label>
+            <label>o Subir portada
+              <input id="todoCoverFile" type="file" accept="image/*" />
+            </label>
+          </div>
+          <div id="todoCoverColorFields" class="todo-cover-fields hidden">
+            <div class="todo-color-row">
+              <input id="todoCoverColor" type="color" value="#5f5bff" aria-label="Color de portada" />
+              <div id="todoCoverSwatches" class="todo-color-swatches"></div>
+            </div>
+          </div>
+          <label id="todoCoverHeightField">Altura de portada <span id="todoCoverHeightValue" class="todo-cover-height-value">140px</span>
+            <input id="todoCoverHeight" type="range" min="60" max="320" step="10" value="140" />
+          </label>
+          <div id="todoCoverPreview" class="todo-cover-preview"></div>
+        </div>
         <div id="todoCoverUploadSpinner" class="upload-spinner hidden">
           <span class="spinner mini"></span>
           <span>Subiendo portada...</span>
         </div>
-        <div class="todo-task-editor">
-          <strong>Tareas del módulo</strong>
-          <div class="todo-task-import">
-            <input id="todoTasksXlsx" type="file" accept=".xlsx,.xls" />
-            <button id="importTodoTasksXlsx" type="button" class="btn btn-pill btn-soft"><i class="bi bi-file-earmark-excel"></i> Importar XLSX</button>
+        <div id="todoModuleTasksSection" class="todo-module-tasks">
+          <div class="todo-task-editor">
+            <strong>Tareas del módulo</strong>
+            <div class="todo-task-import">
+              <input id="todoTasksXlsx" type="file" accept=".xlsx,.xls" />
+              <button id="importTodoTasksXlsx" type="button" class="btn btn-pill btn-soft"><i class="bi bi-file-earmark-excel"></i> Importar XLSX</button>
+            </div>
+            <p class="sub">Plantilla XLSX: <strong>Titulo | Desde | Hasta | Importancia | Comentarios</strong> (Importancia es opcional).</p>
+            <div id="todoTaskRows" class="todo-task-rows"></div>
+            <button id="addTodoTaskRow" type="button" class="btn btn-pill btn-ghost"><i class="bi bi-plus-lg"></i> Agregar tarea</button>
           </div>
-          <p class="sub">Plantilla XLSX: <strong>Titulo | Desde | Hasta | Comentarios</strong>.</p>
-          <div id="todoTaskRows" class="todo-task-rows"></div>
-          <button id="addTodoTaskRow" type="button" class="btn btn-pill btn-ghost"><i class="bi bi-plus-lg"></i> Agregar tarea</button>
+          <p class="sub">Cada tarea tiene fecha desde/hasta. El módulo recalcula su % automáticamente por tareas realizadas o vencidas. Al pasar la fecha "Hasta" sin completarse, la tarea pasa sola a importancia Crítico.</p>
         </div>
-        <p class="sub">Cada tarea tiene fecha desde/hasta. El módulo recalcula su % automáticamente por tareas realizadas o vencidas.</p>
         <p id="todoInlineMessage" class="sub todo-inline-message hidden"></p>
         <div class="modal-actions">
           <button type="button" id="cancelTodo" class="btn btn-pill btn-ghost">Cancelar</button>
@@ -249,7 +280,80 @@
       </form>
     </dialog>
 
+    <dialog id="todoTaskViewModal" class="modal">
+      <div class="modal-content todo-task-view">
+        <div class="todo-task-detail-head">
+          <span id="todoTaskViewModule" class="todo-task-detail-module"></span>
+        </div>
+        <h3 id="todoTaskViewTitle" class="todo-task-view-title"></h3>
+        <div class="todo-task-view-info">
+          <div class="todo-task-view-block">
+            <span class="todo-task-view-label"><i class="bi bi-calendar-range"></i> Vigencia</span>
+            <div id="todoTaskViewDates" class="todo-task-view-dates"></div>
+          </div>
+          <div class="todo-task-view-block">
+            <span class="todo-task-view-label"><i class="bi bi-flag"></i> Estado</span>
+            <div id="todoTaskViewState" class="todo-task-flags"></div>
+          </div>
+        </div>
+        <div class="todo-task-view-block">
+          <span class="todo-task-view-label"><i class="bi bi-chat-left-text"></i> Comentario</span>
+          <div id="todoTaskViewComment" class="todo-task-view-comment"></div>
+        </div>
+        <div id="todoTaskViewMediaBlock" class="todo-task-view-block">
+          <span class="todo-task-view-label"><i class="bi bi-images"></i> Imágenes y videos</span>
+          <div id="todoTaskViewMedia" class="todo-media-list"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="closeTodoTaskView" class="btn btn-pill btn-ghost">Cerrar</button>
+          <button type="button" id="editFromTodoTaskView" class="btn btn-pill btn-primary"><i class="bi bi-pencil-square"></i> Editar</button>
+        </div>
+      </div>
+    </dialog>
 
+    <dialog id="todoTaskModal" class="modal">
+      <form id="todoTaskForm" class="modal-content todo-task-detail">
+        <h3 id="todoTaskModalHeading">Editar tarea</h3>
+        <div class="todo-task-detail-head">
+          <span id="todoTaskModalModule" class="todo-task-detail-module"></span>
+          <span id="todoTaskModalBadges" class="todo-task-flags"></span>
+        </div>
+        <label>Título <input id="todoTaskTitleInput" type="text" required /></label>
+        <div class="todo-task-detail-dates">
+          <label>Desde <input id="todoTaskStartInput" type="text" placeholder="Desde" /></label>
+          <label>Hasta <input id="todoTaskEndInput" type="text" placeholder="Hasta" /></label>
+        </div>
+        <div class="todo-task-detail-field">
+          <span>Importancia</span>
+          <div id="todoTaskPriorityGroup" class="todo-priority-picker" role="radiogroup" aria-label="Importancia"></div>
+          <p id="todoTaskAutoCriticalNote" class="sub todo-auto-critical-note hidden"><i class="bi bi-hourglass-bottom"></i> Pasó a Crítico automáticamente al vencer la fecha "Hasta". Podés cambiarla igual.</p>
+        </div>
+        <div class="todo-task-detail-field">
+          <span>Imágenes y videos</span>
+          <div id="todoTaskMediaList" class="todo-media-list"></div>
+          <div class="todo-media-add">
+            <input id="todoTaskMediaUrl" type="url" placeholder="Link de YouTube o URL de imagen" />
+            <button id="addTodoTaskMediaUrl" type="button" class="btn btn-pill btn-soft"><i class="bi bi-link-45deg"></i> Agregar</button>
+          </div>
+          <label class="todo-media-upload">o subir imágenes
+            <input id="todoTaskMediaFiles" type="file" accept="image/*" multiple />
+          </label>
+          <div id="todoTaskMediaSpinner" class="upload-spinner hidden">
+            <span class="spinner mini"></span>
+            <span>Subiendo imágenes...</span>
+          </div>
+          <p id="todoTaskMediaMessage" class="sub todo-inline-message hidden"></p>
+        </div>
+        <label class="todo-task-done-toggle"><input id="todoTaskDoneInput" type="checkbox" /> Tarea completada</label>
+        <label>Comentario <textarea id="todoTaskCommentInput" rows="5" placeholder="Comentario opcional"></textarea></label>
+        <div class="modal-actions todo-task-detail-actions">
+          <button type="button" id="deleteTodoTaskBtn" class="btn btn-pill btn-danger-soft"><i class="bi bi-trash3"></i> Eliminar</button>
+          <span class="todo-task-detail-spacer"></span>
+          <button type="button" id="cancelTodoTask" class="btn btn-pill btn-ghost">Cancelar</button>
+          <button type="submit" id="saveTodoTask" class="btn btn-pill btn-primary">Guardar</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="slackConfigModal" class="modal">
       <form id="slackConfigForm" class="modal-content">
@@ -267,7 +371,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
     <div class="scroll-arrows">
       <button id="scrollUpBtn" class="btn btn-pill btn-soft"><i class="bi bi-arrow-up"></i></button>

@@ -57,7 +57,6 @@ let editingPlaylistId = null;
 let editingTodoId = null;
 let expandedTodoId = null;
 const todoTaskPageMap = new Map();
-const todoTaskEditDrafts = new Map();
 let nearestMeetingId = null;
 let uiTickerInterval = null;
 const pendingFinishMeetingIds = new Set();
@@ -131,11 +130,11 @@ function escapeHtml(value = '') {
 }
 
 function fireTodoSwal(options = {}) {
-  const todoModal = $('todoModal');
-  if (todoModal?.open && !options.target) {
+  const openModal = [$('todoTaskModal'), $('todoModal')].find((modal) => modal?.open);
+  if (openModal && !options.target) {
     return IOSSwal.fire({
       ...options,
-      target: todoModal,
+      target: openModal,
     });
   }
   return IOSSwal.fire(options);
@@ -947,7 +946,7 @@ function startUiTicker() {
   if (uiTickerInterval) window.clearInterval(uiTickerInterval);
   uiTickerInterval = window.setInterval(() => {
     refreshLiveMeetingsView();
-    renderTodoList();
+    applyTodoOverdueEscalation().finally(renderTodoList);
   }, 60000);
 }
 
@@ -965,92 +964,173 @@ function isTaskOverdue(task) {
   return Date.now() > end.getTime();
 }
 
-function getTodoTaskDraftKey(todoId, taskIndex) {
-  return `${todoId}:${taskIndex}`;
+const TODO_PRIORITIES = [
+  { value: 'normal', label: 'Normal', icon: 'bi-circle-fill' },
+  { value: 'regular', label: 'Regular', icon: 'bi-exclamation-circle-fill' },
+  { value: 'critico', label: 'Crítico', icon: 'bi-exclamation-triangle-fill' },
+];
+const TODO_COVER_SWATCHES = ['#5f5bff', '#47a2ff', '#2fb67c', '#f2994a', '#e5566f', '#a55eea', '#13131a', '#8e8ea8'];
+const TODO_COVER_DEFAULT_HEIGHT = 140;
+const TODO_COVER_MIN_HEIGHT = 60;
+const TODO_COVER_MAX_HEIGHT = 320;
+const TODO_TITLE_FONTS = [
+  { value: 'inter', label: 'Inter (predeterminada)', family: "'Inter', system-ui, sans-serif" },
+  { value: 'poppins', label: 'Poppins', family: "'Poppins', sans-serif" },
+  { value: 'montserrat', label: 'Montserrat', family: "'Montserrat', sans-serif" },
+  { value: 'space-grotesk', label: 'Space Grotesk', family: "'Space Grotesk', sans-serif" },
+  { value: 'playfair', label: 'Playfair Display', family: "'Playfair Display', serif" },
+  { value: 'dm-serif', label: 'DM Serif Display', family: "'DM Serif Display', serif" },
+  { value: 'merriweather', label: 'Merriweather', family: "'Merriweather', serif" },
+  { value: 'bebas', label: 'Bebas Neue', family: "'Bebas Neue', sans-serif" },
+  { value: 'caveat', label: 'Caveat (manuscrita)', family: "'Caveat', cursive" },
+  { value: 'jetbrains', label: 'JetBrains Mono', family: "'JetBrains Mono', monospace" },
+];
+const todoDateShortFmt = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short' });
+
+function normalizeTaskPriority(value) {
+  const raw = String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+  return TODO_PRIORITIES.some((p) => p.value === raw) ? raw : 'normal';
 }
 
-function getTodoTaskDraft(todoId, taskIndex) {
-  return todoTaskEditDrafts.get(getTodoTaskDraftKey(todoId, taskIndex)) || null;
+function getTaskPriorityMeta(task) {
+  const value = normalizeTaskPriority(task?.priority);
+  return TODO_PRIORITIES.find((p) => p.value === value);
 }
 
-function syncTodoTaskDrafts() {
-  for (const key of todoTaskEditDrafts.keys()) {
-    const [todoId, rawIndex] = key.split(':');
-    const taskIndex = Number(rawIndex);
-    const todo = todos.find((row) => row.id === todoId);
-    if (!todo || Number.isNaN(taskIndex) || !todo.tasks?.[taskIndex]) {
-      todoTaskEditDrafts.delete(key);
-    }
+function getTodoTitleFont(value) {
+  return TODO_TITLE_FONTS.find((font) => font.value === value) || TODO_TITLE_FONTS[0];
+}
+
+const todoDateLongFmt = new Intl.DateTimeFormat('es-ES', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+
+function formatTodoLongDate(dateKey) {
+  if (!dateKey) return '';
+  const date = new Date(`${dateKey}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? dateKey : todoDateLongFmt.format(date);
+}
+
+function formatTodoShortDate(dateKey) {
+  if (!dateKey) return '';
+  const date = new Date(`${dateKey}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? dateKey : todoDateShortFmt.format(date);
+}
+
+function normalizeCoverColor(value) {
+  return /^#[0-9a-f]{6}$/i.test(String(value || '')) ? value : TODO_COVER_SWATCHES[0];
+}
+
+function normalizeCoverHeight(value) {
+  const height = Number(value);
+  if (!Number.isFinite(height)) return TODO_COVER_DEFAULT_HEIGHT;
+  return Math.min(Math.max(Math.round(height), TODO_COVER_MIN_HEIGHT), TODO_COVER_MAX_HEIGHT);
+}
+
+function getTodoCoverType(todo) {
+  if (['image', 'color', 'none'].includes(todo?.coverType)) return todo.coverType;
+  return todo?.cover ? 'image' : 'none';
+}
+
+function renderTodoCover(todo) {
+  const type = getTodoCoverType(todo);
+  const height = normalizeCoverHeight(todo.coverHeight);
+  if (type === 'image' && todo.cover) {
+    return `<img class="todo-cover" style="height:${height}px" src="${escapeHtml(todo.cover)}" alt="${escapeHtml(todo.title || '')}" />`;
   }
+  if (type === 'color') {
+    return `<div class="todo-cover todo-cover-color" style="height:${height}px;--cover-color:${normalizeCoverColor(todo.coverColor)}"></div>`;
+  }
+  return '';
 }
 
-function renderTodoTask(todoId, task, taskIndex) {
-  const draft = getTodoTaskDraft(todoId, taskIndex);
-  if (draft) {
-    return `<div class="todo-task-row is-editing ${isTaskOverdue(task) ? 'is-overdue' : ''}">
-      <div class="todo-task-editing-head">
-        <span class="todo-editing-badge"><i class="bi bi-pencil-square"></i> Modo edición</span>
-        <span class="todo-task-state">${task.done ? 'Completada' : 'Pendiente'}</span>
-      </div>
-      <div class="todo-task-editor-grid">
-        <label class="todo-inline-field">
-          <span>Título</span>
-          <input class="todo-task-inline-input" data-inline-task-field="title" data-inline-task="${todoId}" data-task-index="${taskIndex}" type="text" value="${escapeHtml(draft.title || '')}" />
-        </label>
-        <div class="todo-task-editor-dates">
-          <label class="todo-inline-field">
-            <span>Desde</span>
-            <input class="todo-task-inline-input" data-inline-task-field="startDate" data-inline-task="${todoId}" data-task-index="${taskIndex}" data-inline-task-date="1" type="text" value="${escapeHtml(draft.startDate || '')}" placeholder="Desde" />
-          </label>
-          <label class="todo-inline-field">
-            <span>Hasta</span>
-            <input class="todo-task-inline-input" data-inline-task-field="endDate" data-inline-task="${todoId}" data-task-index="${taskIndex}" data-inline-task-date="1" type="text" value="${escapeHtml(draft.endDate || '')}" placeholder="Hasta" />
-          </label>
-        </div>
-        <label class="todo-inline-field">
-          <span>Comentario</span>
-          <textarea class="todo-task-inline-textarea" data-inline-task-field="comment" data-inline-task="${todoId}" data-task-index="${taskIndex}" rows="4" placeholder="Comentario opcional">${escapeHtml(draft.comment || '')}</textarea>
-        </label>
-      </div>
-      <div class="todo-task-actions">
-        <div class="todo-task-flags">
-          ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
-        </div>
-        <div class="todo-task-action-buttons">
-          <button class="btn btn-pill btn-primary" data-save-task-edit="${todoId}" data-task-index="${taskIndex}" type="button"><i class="bi bi-check2"></i> Guardar</button>
-          <button class="btn btn-pill btn-ghost btn-subtle" data-cancel-task-edit="${todoId}" data-task-index="${taskIndex}" type="button"><i class="bi bi-x-lg"></i> Cancelar</button>
-          <button class="btn btn-pill btn-danger-soft" data-delete-task="${todoId}" data-task-index="${taskIndex}" type="button" aria-label="Eliminar tarea" title="Eliminar tarea"><i class="bi bi-trash3"></i></button>
-        </div>
-      </div>
-    </div>`;
+function getYoutubeVideoId(url) {
+  const match = String(url || '').match(
+    /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/,
+  );
+  return match ? match[1] : '';
+}
+
+function getTaskMedia(task) {
+  return Array.isArray(task?.media) ? task.media.filter((item) => item?.url) : [];
+}
+
+function getTaskMediaThumb(item) {
+  if (item.type === 'youtube') {
+    const videoId = getYoutubeVideoId(item.url);
+    return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : '';
   }
-  return `<div class="todo-task-row ${isTaskOverdue(task) ? 'is-overdue' : ''}">
-    <label class="todo-check">
-      <input type="checkbox" data-todo-task="${todoId}" data-task-index="${taskIndex}" ${task.done ? 'checked' : ''} />
-      <span>${escapeHtml(task.title || '')}</span>
-    </label>
+  return item.url;
+}
+
+// Pasa a crítico las tareas vencidas (fecha "Hasta" cumplida sin completar). `autoCriticalFor` guarda la
+// fecha ya escalada para no pisar un cambio manual posterior de importancia.
+async function applyTodoOverdueEscalation() {
+  const changed = [];
+  todos.forEach((todo) => {
+    let touched = false;
+    const tasks = (todo.tasks || []).map((task) => {
+      if (!isTaskOverdue(task) || task.autoCriticalFor === task.endDate) return task;
+      touched = true;
+      return { ...task, priority: 'critico', autoCriticalFor: task.endDate };
+    });
+    if (!touched) return;
+    todo.tasks = tasks;
+    changed.push(todo);
+  });
+  if (!changed.length) return false;
+  try {
+    await Promise.all(
+      changed.map((todo) => update(ref(rtdb, `todos/${todo.id}`), { tasks: todo.tasks, updatedAt: new Date().toISOString() })),
+    );
+  } catch (error) {
+    console.error('[Calendario] No se pudo guardar el cambio automático a crítico:', error);
+  }
+  return true;
+}
+
+function renderTodoTaskCard(todoId, task, taskIndex) {
+  const priority = getTaskPriorityMeta(task);
+  const overdue = isTaskOverdue(task);
+  const media = getTaskMedia(task);
+  const thumb = media.length ? getTaskMediaThumb(media[0]) : '';
+  const dates =
+    task.startDate || task.endDate
+      ? `${escapeHtml(formatTodoShortDate(task.startDate) || '…')} → ${escapeHtml(formatTodoShortDate(task.endDate) || '…')}`
+      : 'Sin fechas';
+  return `<article class="todo-task-card prio-${priority.value} ${task.done ? 'is-done' : ''} ${overdue ? 'is-overdue' : ''}"
+      data-open-task="${todoId}" data-task-index="${taskIndex}" tabindex="0" role="button" aria-label="Ver tarea ${escapeHtml(task.title || '')}">
     ${
-      task.comment
-        ? `<div class="todo-task-comment-wrap">
-            <i class="bi bi-chat-left-text"></i>
-            <div class="todo-task-comment" role="textbox" aria-readonly="true" aria-label="Comentario de la tarea">${escapeHtml(task.comment)}</div>
+      thumb
+        ? `<div class="todo-task-card-thumb">
+            <img src="${escapeHtml(thumb)}" alt="" loading="lazy" />
+            ${media[0].type === 'youtube' ? '<span class="todo-task-card-play"><i class="bi bi-play-fill"></i></span>' : ''}
           </div>`
         : ''
     }
-    <div class="todo-task-dates">
-      <span><i class="bi bi-calendar-range"></i> ${escapeHtml(task.startDate || 'Sin desde')} → ${escapeHtml(task.endDate || 'Sin hasta')}</span>
+    <div class="todo-task-card-head">
+      <span class="todo-priority-pill prio-${priority.value}"><i class="bi ${priority.icon}"></i> ${priority.label}</span>
+      <label class="todo-task-card-check" title="${task.done ? 'Marcar pendiente' : 'Marcar completada'}">
+        <input type="checkbox" data-todo-task="${todoId}" data-task-index="${taskIndex}" ${task.done ? 'checked' : ''} />
+      </label>
     </div>
-    <div class="todo-task-actions">
-      <div class="todo-task-flags">
-        ${isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : ''}
-        ${task.comment ? '<span class="todo-comment-pill">Con comentarios</span>' : ''}
-      </div>
-      <div class="todo-task-action-buttons">
-        <button class="btn btn-pill btn-ghost btn-subtle" data-edit-task="${todoId}" data-task-index="${taskIndex}" type="button"><i class="bi bi-pencil-square"></i> Editar</button>
-        <button class="btn btn-pill btn-danger-soft" data-delete-task="${todoId}" data-task-index="${taskIndex}" type="button" aria-label="Eliminar tarea" title="Eliminar tarea"><i class="bi bi-trash3"></i></button>
-      </div>
+    <strong class="todo-task-card-title">${escapeHtml(task.title || '')}</strong>
+    <div class="todo-task-card-meta">
+      <span><i class="bi bi-calendar-range"></i> ${dates}</span>
     </div>
-  </div>`;
+    <div class="todo-task-card-foot">
+      ${overdue ? '<span class="todo-overdue-label">Vencida</span>' : ''}
+      ${task.done ? '<span class="todo-task-chip is-done"><i class="bi bi-check2"></i> Completada</span>' : ''}
+      ${task.comment ? '<span class="todo-task-chip" title="Tiene comentarios"><i class="bi bi-chat-left-text"></i></span>' : ''}
+      ${media.length ? `<span class="todo-task-chip" title="Adjuntos"><i class="bi bi-paperclip"></i> ${media.length}</span>` : ''}
+    </div>
+    <div class="todo-task-card-choices">
+      <button type="button" class="btn btn-pill btn-primary" data-view-task="${todoId}" data-task-index="${taskIndex}"><i class="bi bi-eye"></i> Ver más</button>
+      <button type="button" class="btn btn-pill btn-ghost" data-edit-task="${todoId}" data-task-index="${taskIndex}"><i class="bi bi-pencil-square"></i> Editar</button>
+    </div>
+  </article>`;
 }
 
 function todoCard(todo) {
@@ -1058,6 +1138,7 @@ function todoCard(todo) {
   const completed = progress === 100;
   const totalTasks = todo.tasks?.length || 0;
   const completedTasks = (todo.tasks || []).filter((task) => task.done || isTaskOverdue(task)).length;
+  const criticalTasks = (todo.tasks || []).filter((task) => !task.done && normalizeTaskPriority(task.priority) === 'critico').length;
   const hasOverdue = (todo.tasks || []).some((task) => isTaskOverdue(task));
   const perPage = 15;
   const totalPages = Math.max(Math.ceil(totalTasks / perPage), 1);
@@ -1067,10 +1148,10 @@ function todoCard(todo) {
   const isExpanded = expandedTodoId === todo.id;
 
   return `<article class="todo-item ${hasOverdue ? 'is-overdue' : ''}">
-    ${todo.cover ? `<img class="todo-cover" src="${todo.cover}" alt="${todo.title}" />` : ''}
+    ${renderTodoCover(todo)}
     <div class="todo-main">
       <div class="todo-top">
-        <strong>${todo.title}</strong>
+        <strong class="todo-title" style="font-family:${getTodoTitleFont(todo.titleFont).family}">${escapeHtml(todo.title || '')}</strong>
         <div class="todo-top-actions">
           ${completed ? '<span class="badge finished"><i class="bi bi-check2-circle"></i> Completado</span>' : ''}
           <button class="btn btn-pill btn-ghost btn-subtle" type="button" data-toggle-todo="${todo.id}">
@@ -1082,18 +1163,23 @@ function todoCard(todo) {
         <span><i class="bi bi-list-task"></i> ${totalTasks} tareas</span>
         <span><i class="bi bi-check2-square"></i> ${completedTasks}/${totalTasks} avanzadas</span>
         <span><i class="bi bi-graph-up"></i> ${progress}%</span>
+        ${criticalTasks ? `<span class="todo-meta-critical"><i class="bi bi-exclamation-triangle-fill"></i> ${criticalTasks} críticas</span>` : ''}
       </div>
       <div class="todo-progress">
         <div class="todo-progress-bar" style="width:${progress}%"></div>
       </div>
 
       <div class="todo-body ${isExpanded ? '' : 'hidden'}">
-        <div class="todo-checks">
-          ${visibleTasks
-            .map(
-              (task, idx) => renderTodoTask(todo.id, task, start + idx),
-            )
-            .join('')}
+        <div class="todo-task-grid">
+          ${visibleTasks.map((task, idx) => renderTodoTaskCard(todo.id, task, start + idx)).join('')}
+          ${
+            currentPage === totalPages
+              ? `<button type="button" class="todo-task-card-add" data-add-task="${todo.id}">
+                  <i class="bi bi-plus-lg"></i>
+                  <span>Nueva tarea</span>
+                </button>`
+              : ''
+          }
         </div>
         ${
           totalPages > 1
@@ -1105,6 +1191,7 @@ function todoCard(todo) {
             : ''
         }
         <div class="todo-actions">
+          <button class="btn btn-pill btn-primary btn-subtle" data-add-task="${todo.id}"><i class="bi bi-plus-lg"></i> Agregar tarea</button>
           <button class="btn btn-pill btn-soft btn-subtle" data-edit-todo="${todo.id}"><i class="bi bi-pencil-square"></i> Editar módulo</button>
           <button class="btn btn-pill btn-ghost btn-subtle" data-delete-todo="${todo.id}"><i class="bi bi-trash3"></i> Eliminar</button>
         </div>
@@ -1114,10 +1201,14 @@ function todoCard(todo) {
 }
 
 function createTaskRow(task = {}) {
-  return `<div class="task-form-row">
+  const priority = normalizeTaskPriority(task.priority);
+  return `<div class="task-form-row" data-task-done="${task.done ? '1' : '0'}" data-task-auto-critical="${escapeHtml(task.autoCriticalFor || '')}" data-task-media="${escapeHtml(JSON.stringify(getTaskMedia(task)))}">
     <input type="text" data-task-field="title" placeholder="Título de tarea" value="${escapeHtml(task.title || '')}" />
-    <input type="text" data-task-field="startDate" data-task-done="${task.done ? '1' : '0'}" value="${escapeHtml(task.startDate || '')}" placeholder="Desde" />
+    <input type="text" data-task-field="startDate" value="${escapeHtml(task.startDate || '')}" placeholder="Desde" />
     <input type="text" data-task-field="endDate" value="${escapeHtml(task.endDate || '')}" placeholder="Hasta" />
+    <select data-task-field="priority" aria-label="Importancia">
+      ${TODO_PRIORITIES.map((p) => `<option value="${p.value}" ${p.value === priority ? 'selected' : ''}>${p.label}</option>`).join('')}
+    </select>
     <button type="button" class="btn btn-pill btn-ghost" data-remove-task-row><i class="bi bi-trash3"></i></button>
     <textarea data-task-field="comment" rows="3" placeholder="Comentario (opcional)">${escapeHtml(task.comment || '')}</textarea>
   </div>`;
@@ -1129,31 +1220,32 @@ function renderTodoTaskRows(tasks = []) {
   initTodoTaskDatePickers();
 }
 
-function initTodoTaskDatePickers() {
-  document.querySelectorAll('#todoTaskRows input[data-task-field="startDate"], #todoTaskRows input[data-task-field="endDate"]').forEach((input) => {
-    if (input._flatpickr) return;
-    flatpickr(input, {
-      locale: 'es',
-      dateFormat: 'Y-m-d',
-      allowInput: true,
-      disableMobile: true,
-      static: true,
-    });
+function initTodoDatePicker(input) {
+  if (!input || input._flatpickr || typeof flatpickr !== 'function') return;
+  flatpickr(input, {
+    locale: 'es',
+    dateFormat: 'Y-m-d',
+    allowInput: true,
+    disableMobile: true,
+    static: true,
   });
 }
 
-function initInlineTodoTaskDatePickers() {
-  if (typeof flatpickr !== 'function') return;
-  document.querySelectorAll('#todoList input[data-inline-task-date]').forEach((input) => {
-    if (input._flatpickr) return;
-    flatpickr(input, {
-      locale: 'es',
-      dateFormat: 'Y-m-d',
-      allowInput: true,
-      disableMobile: true,
-      static: true,
-    });
-  });
+function initTodoTaskDatePickers() {
+  document
+    .querySelectorAll(
+      '#todoTaskRows input[data-task-field="startDate"], #todoTaskRows input[data-task-field="endDate"]',
+    )
+    .forEach(initTodoDatePicker);
+}
+
+function parseTaskRowMedia(raw) {
+  try {
+    const parsed = JSON.parse(raw || '[]');
+    return Array.isArray(parsed) ? parsed.filter((item) => item?.url) : [];
+  } catch {
+    return [];
+  }
 }
 
 function collectTodoTasksFromForm() {
@@ -1162,8 +1254,11 @@ function collectTodoTasksFromForm() {
       title: row.querySelector('[data-task-field="title"]')?.value.trim() || '',
       startDate: row.querySelector('[data-task-field="startDate"]')?.value || '',
       endDate: row.querySelector('[data-task-field="endDate"]')?.value || '',
+      priority: normalizeTaskPriority(row.querySelector('[data-task-field="priority"]')?.value),
       comment: row.querySelector('[data-task-field="comment"]')?.value.trim() || '',
-      done: row.querySelector('[data-task-field="startDate"]')?.dataset?.taskDone === '1',
+      done: row.dataset.taskDone === '1',
+      autoCriticalFor: row.dataset.taskAutoCritical || '',
+      media: parseTaskRowMedia(row.dataset.taskMedia),
     }))
     .filter((task) => task.title);
 }
@@ -1204,11 +1299,12 @@ async function importTodoTasksFromXlsx() {
       title: String(row.Titulo || row.Título || row.titulo || '').trim(),
       startDate: normalizeExcelDate(row.Desde || row.desde),
       endDate: normalizeExcelDate(row.Hasta || row.hasta),
+      priority: normalizeTaskPriority(row.Importancia || row.importancia || row.Prioridad || row.prioridad),
       comment: String(row.Comentarios || row.comentarios || row.Comentario || row.comentario || '').trim(),
     }))
     .filter((row) => row.title);
   if (!mapped.length) {
-    showTodoInlineMessage('No encontré tareas válidas. Usá columnas: Titulo | Desde | Hasta | Comentarios.', 'warning');
+    showTodoInlineMessage('No encontré tareas válidas. Usá columnas: Titulo | Desde | Hasta | Importancia | Comentarios.', 'warning');
     return;
   }
   renderTodoTaskRows(mapped);
@@ -1218,10 +1314,8 @@ async function importTodoTasksFromXlsx() {
 function renderTodoList() {
   const list = $('todoList');
   if (!list) return;
-  syncTodoTaskDrafts();
   if (expandedTodoId && !todos.some((todo) => todo.id === expandedTodoId)) expandedTodoId = null;
   list.innerHTML = todos.length ? todos.map(todoCard).join('') : '<p>No hay checklist creados.</p>';
-  initInlineTodoTaskDatePickers();
 }
 
 async function loadReferences() {
@@ -1242,6 +1336,7 @@ async function loadReferences() {
         ? todo.items.map((item) => ({ title: item.text || '', startDate: '', endDate: '', comment: '', done: Boolean(item.done) }))
         : [],
   }));
+  await applyTodoOverdueEscalation();
   renderFilterOptions();
   renderPickers();
   renderTodoList();
@@ -1400,15 +1495,87 @@ async function deletePlaylist(id) {
   await fetchMeetings({ forceRefresh: true });
 }
 
+let todoCoverType = 'image';
+let todoCoverPreviewObjectUrl = '';
+
+function setTodoCoverEditor({ type = 'image', url = '', color = TODO_COVER_SWATCHES[0], height = TODO_COVER_DEFAULT_HEIGHT } = {}) {
+  $('todoCover').value = url;
+  $('todoCoverFile').value = '';
+  $('todoCoverColor').value = normalizeCoverColor(color);
+  $('todoCoverHeight').value = String(normalizeCoverHeight(height));
+  setTodoCoverType(type);
+}
+
+function setTodoCoverType(type) {
+  todoCoverType = ['image', 'color', 'none'].includes(type) ? type : 'image';
+  document.querySelectorAll('#todoCoverTypeGroup [data-cover-type]').forEach((btn) => {
+    const active = btn.dataset.coverType === todoCoverType;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-checked', String(active));
+  });
+  $('todoCoverImageFields').classList.toggle('hidden', todoCoverType !== 'image');
+  $('todoCoverColorFields').classList.toggle('hidden', todoCoverType !== 'color');
+  $('todoCoverHeightField').classList.toggle('hidden', todoCoverType === 'none');
+  updateTodoCoverPreview();
+}
+
+function updateTodoCoverPreview() {
+  const preview = $('todoCoverPreview');
+  const height = normalizeCoverHeight($('todoCoverHeight').value);
+  const color = normalizeCoverColor($('todoCoverColor').value);
+  $('todoCoverHeightValue').textContent = `${height}px`;
+  document.querySelectorAll('#todoCoverSwatches [data-cover-swatch]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.coverSwatch.toLowerCase() === color.toLowerCase());
+  });
+  if (todoCoverPreviewObjectUrl) {
+    URL.revokeObjectURL(todoCoverPreviewObjectUrl);
+    todoCoverPreviewObjectUrl = '';
+  }
+  if (todoCoverType === 'color') {
+    preview.innerHTML = renderTodoCover({ coverType: 'color', coverColor: color, coverHeight: height });
+    return;
+  }
+  if (todoCoverType === 'image') {
+    const file = $('todoCoverFile').files?.[0];
+    if (file) todoCoverPreviewObjectUrl = URL.createObjectURL(file);
+    const src = todoCoverPreviewObjectUrl || $('todoCover').value.trim();
+    preview.innerHTML = src
+      ? renderTodoCover({ coverType: 'image', cover: src, coverHeight: height, title: 'Vista previa' })
+      : '<p class="sub">Pegá una URL o subí una imagen para ver la vista previa.</p>';
+    return;
+  }
+  preview.innerHTML = '';
+}
+
+function setTodoTitleFont(value) {
+  const font = getTodoTitleFont(value);
+  $('todoTitleFont').value = font.value;
+  $('todoTitleFontPreview').style.fontFamily = font.family;
+  $('todoTitleFontPreview').textContent = $('todoTitle').value.trim() || 'Título del módulo';
+}
+
+function renderTodoCoverSwatches() {
+  $('todoCoverSwatches').innerHTML = TODO_COVER_SWATCHES.map(
+    (color) =>
+      `<button type="button" class="todo-color-swatch" data-cover-swatch="${color}" style="--swatch:${color}" aria-label="Color ${color}"></button>`,
+  ).join('');
+}
+
 async function onSaveTodo(e) {
   e.preventDefault();
   clearTodoInlineMessage();
   const title = $('todoTitle').value.trim();
   const coverUrl = $('todoCover').value.trim();
-  const coverFile = $('todoCoverFile').files?.[0];
+  const coverFile = todoCoverType === 'image' ? $('todoCoverFile').files?.[0] : null;
   let cover = coverUrl;
-  const tasks = collectTodoTasksFromForm();
+  // Al editar un módulo las tareas no se tocan: se gestionan desde sus cards.
+  const isEditing = Boolean(editingTodoId);
+  const tasks = isEditing ? null : collectTodoTasksFromForm();
   if (!title) return;
+  if (!isEditing && !tasks.length) {
+    showTodoInlineMessage('Faltan tareas: agregá al menos una para guardar el módulo.', 'warning');
+    return;
+  }
   if (coverFile) {
     $('todoCoverUploadSpinner').classList.remove('hidden');
     $('saveTodo').disabled = true;
@@ -1421,12 +1588,16 @@ async function onSaveTodo(e) {
       $('saveTodo').disabled = false;
     }
   }
-  if (!tasks.length) {
-    showTodoInlineMessage('Faltan tareas: agregá al menos una para guardar el módulo.', 'warning');
-    return;
-  }
-  const payload = { title, cover, tasks };
-  if (editingTodoId) {
+  const payload = {
+    title,
+    cover,
+    titleFont: getTodoTitleFont($('todoTitleFont').value).value,
+    coverType: todoCoverType,
+    coverColor: normalizeCoverColor($('todoCoverColor').value),
+    coverHeight: normalizeCoverHeight($('todoCoverHeight').value),
+    ...(isEditing ? {} : { tasks }),
+  };
+  if (isEditing) {
     await update(ref(rtdb, `todos/${editingTodoId}`), { ...payload, updatedAt: new Date().toISOString() });
   } else {
     await saveCollectionItem('todos', payload);
@@ -1434,7 +1605,8 @@ async function onSaveTodo(e) {
   $('todoModal').close();
   editingTodoId = null;
   $('todoForm').reset();
-  $('todoCoverFile').value = '';
+  setTodoCoverEditor();
+  setTodoTitleFont();
   renderTodoTaskRows();
   await loadReferences();
 }
@@ -1444,12 +1616,24 @@ function openTodoModuleEditor(id) {
   if (!todo) return;
   editingTodoId = id;
   $('todoTitle').value = todo.title || '';
-  $('todoCover').value = todo.cover || '';
-  $('todoCoverFile').value = '';
+  setTodoTitleFont(todo.titleFont);
+  setTodoCoverEditor({
+    type: getTodoCoverType(todo),
+    url: todo.cover || '',
+    color: todo.coverColor,
+    height: todo.coverHeight,
+  });
   $('todoTasksXlsx').value = '';
   clearTodoInlineMessage();
-  renderTodoTaskRows(todo.tasks || []);
+  setTodoModuleModalMode('edit');
   $('todoModal').showModal();
+}
+
+function setTodoModuleModalMode(mode) {
+  const isEditing = mode === 'edit';
+  $('todoModalHeading').textContent = isEditing ? 'Editar módulo' : 'Nuevo módulo To Do';
+  $('todoModuleTasksSection').classList.toggle('hidden', isEditing);
+  if (!isEditing) renderTodoTaskRows();
 }
 
 async function editTodoTaskLegacyModal(todoId, taskIndex) {
@@ -1539,55 +1723,433 @@ async function deleteTodoTask(todoId, taskIndex) {
     cancelButtonText: 'Cancelar',
   });
   if (!result.isConfirmed) return;
-  todoTaskEditDrafts.delete(getTodoTaskDraftKey(todoId, taskIndex));
   const tasks = (todo.tasks || []).filter((_, index) => index !== taskIndex);
   await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
+  if (isNew) todoTaskPageMap.set(todoId, Math.ceil(tasks.length / 15));
+  closeTodoTaskModal();
   await loadReferences();
 }
 
-function editTodoTask(todoId, taskIndex) {
+let openTodoTaskRef = null;
+let todoTaskMediaDraft = [];
+
+function setTodoTaskModalPriority(value) {
+  const priority = normalizeTaskPriority(value);
+  document.querySelectorAll('#todoTaskPriorityGroup [data-priority]').forEach((btn) => {
+    const active = btn.dataset.priority === priority;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-checked', String(active));
+  });
+  $('todoTaskForm').dataset.priority = priority;
+}
+
+function showTodoTaskMediaMessage(message = '', type = 'warning') {
+  const holder = $('todoTaskMediaMessage');
+  holder.textContent = message;
+  holder.className = message ? `sub todo-inline-message ${type}` : 'sub todo-inline-message hidden';
+}
+
+function renderTodoMediaItems(items, { removable = false } = {}) {
+  return items
+    .map((item, index) => {
+      const remove = removable
+        ? `<button type="button" class="todo-media-remove" data-remove-media="${index}" aria-label="Quitar adjunto" title="Quitar"><i class="bi bi-x-lg"></i></button>`
+        : '';
+      if (item.type === 'youtube') {
+        const videoId = getYoutubeVideoId(item.url);
+        return `<div class="todo-media-item is-video">
+          <iframe src="https://www.youtube-nocookie.com/embed/${videoId}" title="Video de YouTube" loading="lazy"
+            allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+          ${remove}
+        </div>`;
+      }
+      return `<div class="todo-media-item">
+        <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(item.url)}" alt="Imagen adjunta" loading="lazy" /></a>
+        ${remove}
+      </div>`;
+    })
+    .join('');
+}
+
+function renderTodoTaskMedia() {
+  $('todoTaskMediaList').innerHTML = todoTaskMediaDraft.length
+    ? renderTodoMediaItems(todoTaskMediaDraft, { removable: true })
+    : '<p class="sub">Sin imágenes ni videos todavía.</p>';
+}
+
+let viewTodoTaskRef = null;
+
+function openTodoTaskView(todoId, taskIndex) {
   const todo = todos.find((row) => row.id === todoId);
   const task = todo?.tasks?.[taskIndex];
   if (!todo || !task) return;
-  todoTaskEditDrafts.set(getTodoTaskDraftKey(todoId, taskIndex), {
-    title: task.title || '',
-    startDate: task.startDate || '',
-    endDate: task.endDate || '',
-    comment: task.comment || '',
+  viewTodoTaskRef = { todoId, taskIndex };
+  const priority = getTaskPriorityMeta(task);
+  const media = getTaskMedia(task);
+  $('todoTaskViewModal').dataset.priority = priority.value;
+  $('todoTaskViewModule').innerHTML = `<i class="bi bi-list-check"></i> ${escapeHtml(todo.title || '')}`;
+  $('todoTaskViewTitle').textContent = task.title || '';
+  $('todoTaskViewDates').innerHTML = `
+    <div><small>Desde</small><strong>${escapeHtml(formatTodoLongDate(task.startDate) || 'Sin fecha')}</strong></div>
+    <div><small>Hasta</small><strong>${escapeHtml(formatTodoLongDate(task.endDate) || 'Sin fecha')}</strong></div>`;
+  $('todoTaskViewState').innerHTML = `<span class="todo-priority-pill prio-${priority.value}"><i class="bi ${priority.icon}"></i> ${priority.label}</span>`;
+  $('todoTaskViewComment').innerHTML = task.comment
+    ? escapeHtml(task.comment)
+    : '<span class="sub">Sin comentarios.</span>';
+  $('todoTaskViewMediaBlock').classList.toggle('hidden', !media.length);
+  $('todoTaskViewMedia').innerHTML = renderTodoMediaItems(media);
+  $('todoTaskViewModal').showModal();
+}
+
+function closeTodoTaskView() {
+  viewTodoTaskRef = null;
+  // Vaciar los iframes corta la reproducción de los videos al cerrar.
+  $('todoTaskViewMedia').innerHTML = '';
+  if ($('todoTaskViewModal').open) $('todoTaskViewModal').close();
+}
+
+function getTaskStatusLabel(task) {
+  if (task.done) return 'Completada';
+  return isTaskOverdue(task) ? 'Vencida' : 'Pendiente';
+}
+
+function toExcelDateSerial(dateKey) {
+  const match = String(dateKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return (Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) - Date.UTC(1899, 11, 30)) / 86400000;
+}
+
+function getExcelSheetName(title, usedNames) {
+  const base = String(title || '').replace(/[[\]:*?/\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || 'Módulo';
+  let name = base;
+  let counter = 2;
+  while (usedNames.has(name.toLowerCase())) {
+    const suffix = ` (${counter})`;
+    name = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+    counter += 1;
+  }
+  usedNames.add(name.toLowerCase());
+  return name;
+}
+
+const XLSX_COLORS = {
+  primary: '5F5BFF',
+  primaryDark: '3D3A99',
+  primarySoft: 'ECEBFF',
+  zebra: 'FAF9FF',
+  border: 'D6D3EC',
+  text: '13131A',
+  muted: '6F6F84',
+  white: 'FFFFFF',
+};
+const XLSX_PRIORITY_COLORS = {
+  normal: { fill: 'D8F5DF', font: '1E7A4F' },
+  regular: { fill: 'FFE3C2', font: 'A95A12' },
+  critico: { fill: 'FFDCE2', font: 'B3263F' },
+};
+const XLSX_STATUS_COLORS = { Completada: '1E7A4F', Vencida: 'B3263F', Pendiente: XLSX_COLORS.muted };
+
+function xlsxBorder(color = XLSX_COLORS.border) {
+  const side = { style: 'thin', color: { rgb: color } };
+  return { top: side, bottom: side, left: side, right: side };
+}
+
+function xlsxStyle({ bold = false, size = 11, color = XLSX_COLORS.text, fill, align = 'left', wrap = false, border = true, italic = false } = {}) {
+  return {
+    font: { name: 'Calibri', sz: size, bold, italic, color: { rgb: color } },
+    ...(fill ? { fill: { patternType: 'solid', fgColor: { rgb: fill } } } : {}),
+    alignment: { horizontal: align, vertical: 'center', wrapText: wrap },
+    ...(border ? { border: xlsxBorder() } : {}),
+  };
+}
+
+function setXlsxCell(sheet, r, c, value, style, extra = {}) {
+  const XLSX = globalThis.XLSX;
+  const cell = { ...(typeof value === 'number' ? { t: 'n', v: value } : { t: 's', v: value ?? '' }), s: style, ...extra };
+  sheet[XLSX.utils.encode_cell({ r, c })] = cell;
+}
+
+function finishXlsxSheet(sheet, lastRow, lastCol) {
+  sheet['!ref'] = globalThis.XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: lastCol } });
+  return sheet;
+}
+
+// Encabezado común: título en banda de color y subtítulo con la fecha de exportación.
+function writeXlsxBanner(sheet, title, subtitle, lastCol) {
+  const merges = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
+  ];
+  for (let c = 0; c <= lastCol; c += 1) {
+    setXlsxCell(sheet, 0, c, c === 0 ? title : '', xlsxStyle({ bold: true, size: 16, color: XLSX_COLORS.white, fill: XLSX_COLORS.primary, border: false }));
+    setXlsxCell(sheet, 1, c, c === 0 ? subtitle : '', xlsxStyle({ italic: true, size: 10, color: XLSX_COLORS.muted, fill: XLSX_COLORS.primarySoft, border: false }));
+  }
+  return merges;
+}
+
+function writeXlsxHeaderRow(sheet, r, headers) {
+  headers.forEach((header, c) => {
+    setXlsxCell(sheet, r, c, header, xlsxStyle({ bold: true, color: XLSX_COLORS.white, fill: XLSX_COLORS.primaryDark, align: 'center', wrap: true }));
   });
-  renderTodoList();
 }
 
-function cancelTodoTaskEdit(todoId, taskIndex) {
-  todoTaskEditDrafts.delete(getTodoTaskDraftKey(todoId, taskIndex));
-  renderTodoList();
+function getTodoExportCounts(todo) {
+  const tasks = todo.tasks || [];
+  const countBy = (value) => tasks.filter((task) => normalizeTaskPriority(task.priority) === value).length;
+  return {
+    total: tasks.length,
+    done: tasks.filter((task) => task.done).length,
+    overdue: tasks.filter(isTaskOverdue).length,
+    progress: getTodoProgress(todo),
+    normal: countBy('normal'),
+    regular: countBy('regular'),
+    critico: countBy('critico'),
+  };
 }
 
-async function saveTodoTaskEdit(todoId, taskIndex) {
-  const todo = todos.find((row) => row.id === todoId);
-  const task = todo?.tasks?.[taskIndex];
-  const draft = getTodoTaskDraft(todoId, taskIndex);
-  if (!todo || !task || !draft) return;
-  const title = String(draft.title || '').trim();
-  if (!title) {
-    await IOSSwal.fire({
-      icon: 'warning',
-      title: 'Falta el título',
-      text: 'La tarea necesita un título para poder guardarse.',
+function buildTodoModuleSheet(todo, exportedLabel) {
+  const tasks = todo.tasks || [];
+  const counts = getTodoExportCounts(todo);
+  const lastCol = 8;
+  const sheet = {};
+  const merges = writeXlsxBanner(sheet, todo.title || 'Módulo', exportedLabel, lastCol);
+
+  // Bloque de indicadores: etiqueta + valor en pares.
+  const label = xlsxStyle({ bold: true, color: XLSX_COLORS.primaryDark, fill: XLSX_COLORS.primarySoft });
+  const value = xlsxStyle({ bold: true, align: 'center' });
+  const kpis = [
+    [['Tareas', counts.total], ['Completadas', counts.done], ['Vencidas', counts.overdue], ['Progreso', `${counts.progress}%`]],
+    [['Normal', counts.normal, 'normal'], ['Regular', counts.regular, 'regular'], ['Crítico', counts.critico, 'critico']],
+  ];
+  kpis.forEach((pairs, rowOffset) => {
+    pairs.forEach(([text, amount, priority], index) => {
+      const colors = priority ? XLSX_PRIORITY_COLORS[priority] : null;
+      setXlsxCell(sheet, 3 + rowOffset, index * 2, text, colors ? xlsxStyle({ bold: true, color: colors.font, fill: colors.fill }) : label);
+      setXlsxCell(sheet, 3 + rowOffset, index * 2 + 1, amount, colors ? xlsxStyle({ bold: true, align: 'center', color: colors.font }) : value);
     });
+  });
+
+  const headerRow = 6;
+  writeXlsxHeaderRow(sheet, headerRow, ['N°', 'Tarea', 'Importancia', 'Estado', 'Desde', 'Hasta', 'Comentario', 'Imágenes', 'Videos']);
+  tasks.forEach((task, index) => {
+    const r = headerRow + 1 + index;
+    const fill = index % 2 ? XLSX_COLORS.zebra : undefined;
+    const priority = normalizeTaskPriority(task.priority);
+    const status = getTaskStatusLabel(task);
+    const media = getTaskMedia(task);
+    const images = media.filter((item) => item.type !== 'youtube').map((item) => item.url);
+    const videos = media.filter((item) => item.type === 'youtube').map((item) => item.url);
+    const base = { fill, wrap: true };
+    setXlsxCell(sheet, r, 0, index + 1, xlsxStyle({ ...base, align: 'center', color: XLSX_COLORS.muted }));
+    setXlsxCell(sheet, r, 1, task.title || '', xlsxStyle({ ...base, bold: true }));
+    setXlsxCell(
+      sheet,
+      r,
+      2,
+      getTaskPriorityMeta(task).label,
+      xlsxStyle({ bold: true, align: 'center', color: XLSX_PRIORITY_COLORS[priority].font, fill: XLSX_PRIORITY_COLORS[priority].fill }),
+    );
+    setXlsxCell(sheet, r, 3, status, xlsxStyle({ ...base, bold: true, align: 'center', color: XLSX_STATUS_COLORS[status] }));
+    [task.startDate, task.endDate].forEach((dateKey, offset) => {
+      const serial = toExcelDateSerial(dateKey);
+      setXlsxCell(sheet, r, 4 + offset, serial ?? '—', xlsxStyle({ ...base, align: 'center' }), serial === null ? {} : { z: 'dd/mm/yyyy' });
+    });
+    setXlsxCell(sheet, r, 6, task.comment || '', xlsxStyle({ ...base }));
+    [images, videos].forEach((urls, offset) => {
+      const linkStyle = xlsxStyle({ ...base, color: urls.length === 1 ? '2F5BD8' : XLSX_COLORS.text });
+      if (urls.length === 1) linkStyle.font.underline = true;
+      setXlsxCell(sheet, r, 7 + offset, urls.join('\n'), linkStyle, urls.length === 1 ? { l: { Target: urls[0] } } : {});
+    });
+  });
+  if (!tasks.length) {
+    merges.push({ s: { r: headerRow + 1, c: 0 }, e: { r: headerRow + 1, c: lastCol } });
+    for (let c = 0; c <= lastCol; c += 1) {
+      setXlsxCell(sheet, headerRow + 1, c, c === 0 ? 'Este módulo no tiene tareas.' : '', xlsxStyle({ italic: true, align: 'center', color: XLSX_COLORS.muted }));
+    }
+  }
+
+  const lastRow = headerRow + Math.max(tasks.length, 1);
+  sheet['!merges'] = merges;
+  sheet['!cols'] = [{ wch: 6 }, { wch: 40 }, { wch: 13 }, { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 55 }, { wch: 40 }, { wch: 40 }];
+  sheet['!rows'] = [{ hpt: 30 }, { hpt: 18 }, { hpt: 8 }, { hpt: 20 }, { hpt: 20 }, { hpt: 10 }, { hpt: 24 }];
+  if (tasks.length) {
+    sheet['!autofilter'] = { ref: globalThis.XLSX.utils.encode_range({ s: { r: headerRow, c: 0 }, e: { r: lastRow, c: lastCol } }) };
+  }
+  return finishXlsxSheet(sheet, lastRow, lastCol);
+}
+
+function buildTodoSummarySheet(exportedLabel) {
+  const lastCol = 7;
+  const sheet = {};
+  const merges = writeXlsxBanner(sheet, 'Novo To Do — Resumen', exportedLabel, lastCol);
+  const headerRow = 3;
+  writeXlsxHeaderRow(sheet, headerRow, ['Módulo', 'Tareas', 'Completadas', 'Vencidas', 'Progreso', 'Normal', 'Regular', 'Crítico']);
+  ['normal', 'regular', 'critico'].forEach((priority, offset) => {
+    const colors = XLSX_PRIORITY_COLORS[priority];
+    sheet[globalThis.XLSX.utils.encode_cell({ r: headerRow, c: 5 + offset })].s = xlsxStyle({ bold: true, align: 'center', color: colors.font, fill: colors.fill });
+  });
+  todos.forEach((todo, index) => {
+    const r = headerRow + 1 + index;
+    const counts = getTodoExportCounts(todo);
+    const fill = index % 2 ? XLSX_COLORS.zebra : undefined;
+    const numberStyle = xlsxStyle({ fill, align: 'center' });
+    setXlsxCell(sheet, r, 0, todo.title || '', xlsxStyle({ fill, bold: true, wrap: true }));
+    setXlsxCell(sheet, r, 1, counts.total, numberStyle);
+    setXlsxCell(sheet, r, 2, counts.done, numberStyle);
+    setXlsxCell(sheet, r, 3, counts.overdue, xlsxStyle({ fill, align: 'center', color: counts.overdue ? XLSX_PRIORITY_COLORS.critico.font : XLSX_COLORS.text }));
+    setXlsxCell(
+      sheet,
+      r,
+      4,
+      counts.progress / 100,
+      xlsxStyle({ fill, bold: true, align: 'center', color: counts.progress === 100 ? XLSX_PRIORITY_COLORS.normal.font : XLSX_COLORS.primaryDark }),
+      { z: '0%' },
+    );
+    ['normal', 'regular', 'critico'].forEach((priority, offset) => {
+      const amount = counts[priority];
+      setXlsxCell(sheet, r, 5 + offset, amount, xlsxStyle({ fill, align: 'center', bold: amount > 0, color: amount ? XLSX_PRIORITY_COLORS[priority].font : XLSX_COLORS.muted }));
+    });
+  });
+  const lastRow = headerRow + todos.length;
+  sheet['!merges'] = merges;
+  sheet['!cols'] = [{ wch: 38 }, { wch: 9 }, { wch: 13 }, { wch: 10 }, { wch: 10 }, { wch: 9 }, { wch: 9 }, { wch: 9 }];
+  sheet['!rows'] = [{ hpt: 30 }, { hpt: 18 }, { hpt: 8 }, { hpt: 24 }];
+  return finishXlsxSheet(sheet, lastRow, lastCol);
+}
+
+function exportTodosToXlsx() {
+  const XLSX = globalThis.XLSX;
+  if (!XLSX) {
+    IOSSwal.fire({ icon: 'error', title: 'No se pudo generar el Excel', text: 'La librería de Excel no cargó. Recargá la página.' });
     return;
   }
-  const tasks = [...todo.tasks];
-  tasks[taskIndex] = {
-    ...tasks[taskIndex],
+  if (!todos.length) {
+    IOSSwal.fire({ icon: 'info', title: 'No hay módulos', text: 'Creá al menos un módulo para descargar.' });
+    return;
+  }
+  const exportedLabel = `Exportado el ${new Intl.DateTimeFormat('es-ES', { dateStyle: 'long', timeStyle: 'short' }).format(new Date())}`;
+  const workbook = XLSX.utils.book_new();
+  const usedNames = new Set(['resumen']);
+  XLSX.utils.book_append_sheet(workbook, buildTodoSummarySheet(exportedLabel), 'Resumen');
+  todos.forEach((todo) => {
+    XLSX.utils.book_append_sheet(workbook, buildTodoModuleSheet(todo, exportedLabel), getExcelSheetName(todo.title, usedNames));
+  });
+  XLSX.writeFile(workbook, `Novo-To-Do-${toDateKeyLocal(new Date())}.xlsx`);
+}
+
+function clearTodoTaskCardChoices(exceptCard = null) {
+  document.querySelectorAll('.todo-task-card.is-choosing').forEach((card) => {
+    if (card !== exceptCard) card.classList.remove('is-choosing');
+  });
+}
+
+function addTodoTaskMediaFromUrl() {
+  const url = $('todoTaskMediaUrl').value.trim();
+  if (!url) return;
+  if (!/^https?:\/\//i.test(url)) {
+    showTodoTaskMediaMessage('El link tiene que empezar con http:// o https://');
+    return;
+  }
+  const type = getYoutubeVideoId(url) ? 'youtube' : 'image';
+  todoTaskMediaDraft.push({ type, url });
+  $('todoTaskMediaUrl').value = '';
+  showTodoTaskMediaMessage();
+  renderTodoTaskMedia();
+}
+
+async function uploadTodoTaskMediaFiles() {
+  const files = Array.from($('todoTaskMediaFiles').files || []);
+  if (!files.length) return;
+  $('todoTaskMediaSpinner').classList.remove('hidden');
+  $('saveTodoTask').disabled = true;
+  try {
+    for (const file of files) {
+      const filePath = `todo-task-media/${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
+      const uploaded = await uploadBytes(storageRef(storage, filePath), file);
+      todoTaskMediaDraft.push({ type: 'image', url: await getDownloadURL(uploaded.ref) });
+      renderTodoTaskMedia();
+    }
+    showTodoTaskMediaMessage();
+  } catch (error) {
+    console.error('[Calendario] Error subiendo imágenes de la tarea:', error);
+    showTodoTaskMediaMessage('No se pudieron subir algunas imágenes. Probá de nuevo.');
+  } finally {
+    $('todoTaskMediaFiles').value = '';
+    $('todoTaskMediaSpinner').classList.add('hidden');
+    $('saveTodoTask').disabled = false;
+  }
+}
+
+// taskIndex null = tarea nueva dentro del módulo.
+function openTodoTaskModal(todoId, taskIndex = null) {
+  const todo = todos.find((row) => row.id === todoId);
+  const isNew = taskIndex === null;
+  const task = isNew ? { priority: 'normal' } : todo?.tasks?.[taskIndex];
+  if (!todo || !task) return;
+  openTodoTaskRef = { todoId, taskIndex };
+  $('todoTaskModalHeading').textContent = isNew ? 'Nueva tarea' : 'Editar tarea';
+  $('deleteTodoTaskBtn').classList.toggle('hidden', isNew);
+  $('todoTaskModalModule').innerHTML = `<i class="bi bi-list-check"></i> ${escapeHtml(todo.title || '')}`;
+  $('todoTaskModalBadges').innerHTML = isTaskOverdue(task) ? '<span class="todo-overdue-label">Vencida</span>' : '';
+  $('todoTaskTitleInput').value = task.title || '';
+  $('todoTaskCommentInput').value = task.comment || '';
+  $('todoTaskDoneInput').checked = Boolean(task.done);
+  [
+    ['todoTaskStartInput', task.startDate],
+    ['todoTaskEndInput', task.endDate],
+  ].forEach(([id, value]) => {
+    const input = $(id);
+    initTodoDatePicker(input);
+    if (input._flatpickr) input._flatpickr.setDate(value || null, false);
+    else input.value = value || '';
+  });
+  setTodoTaskModalPriority(task.priority);
+  const autoCritical =
+    Boolean(task.autoCriticalFor) && task.autoCriticalFor === task.endDate && normalizeTaskPriority(task.priority) === 'critico';
+  $('todoTaskAutoCriticalNote').classList.toggle('hidden', !autoCritical);
+  todoTaskMediaDraft = getTaskMedia(task).map((item) => ({ ...item }));
+  $('todoTaskMediaUrl').value = '';
+  $('todoTaskMediaFiles').value = '';
+  showTodoTaskMediaMessage();
+  renderTodoTaskMedia();
+  $('todoTaskModal').showModal();
+}
+
+function closeTodoTaskModal() {
+  openTodoTaskRef = null;
+  if ($('todoTaskModal').open) $('todoTaskModal').close();
+}
+
+async function onSaveTodoTask(e) {
+  e.preventDefault();
+  if (!openTodoTaskRef) return;
+  const { todoId, taskIndex } = openTodoTaskRef;
+  const todo = todos.find((row) => row.id === todoId);
+  const isNew = taskIndex === null;
+  const task = isNew ? {} : todo?.tasks?.[taskIndex];
+  if (!todo || !task) return;
+  const title = $('todoTaskTitleInput').value.trim();
+  if (!title) return;
+  const tasks = [...(todo.tasks || [])];
+  const targetIndex = isNew ? tasks.length : taskIndex;
+  tasks[targetIndex] = {
+    ...task,
     title,
-    startDate: String(draft.startDate || '').trim(),
-    endDate: String(draft.endDate || '').trim(),
-    comment: String(draft.comment || '').trim(),
-    done: tasks[taskIndex]?.done || false,
+    startDate: $('todoTaskStartInput').value.trim(),
+    endDate: $('todoTaskEndInput').value.trim(),
+    priority: normalizeTaskPriority($('todoTaskForm').dataset.priority),
+    comment: $('todoTaskCommentInput').value.trim(),
+    done: $('todoTaskDoneInput').checked,
+    autoCriticalFor: task.autoCriticalFor || '',
+    media: todoTaskMediaDraft,
   };
-  todoTaskEditDrafts.delete(getTodoTaskDraftKey(todoId, taskIndex));
-  await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
+  $('saveTodoTask').disabled = true;
+  try {
+    await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
+  } finally {
+    $('saveTodoTask').disabled = false;
+  }
+  closeTodoTaskModal();
   await loadReferences();
 }
 
@@ -2073,10 +2635,79 @@ function bindEvents() {
     editingTodoId = null;
     $('todoForm').reset();
     $('todoTasksXlsx').value = '';
-    $('todoCoverFile').value = '';
+    setTodoCoverEditor();
+    setTodoTitleFont();
     clearTodoInlineMessage();
     renderTodoTaskRows();
   });
+  $('cancelTodoTask').addEventListener('click', closeTodoTaskModal);
+  $('exportTodoXlsx').addEventListener('click', exportTodosToXlsx);
+  $('closeTodoTaskView').addEventListener('click', closeTodoTaskView);
+  $('todoTaskViewModal').addEventListener('close', closeTodoTaskView);
+  $('editFromTodoTaskView').addEventListener('click', () => {
+    if (!viewTodoTaskRef) return;
+    const { todoId, taskIndex } = viewTodoTaskRef;
+    closeTodoTaskView();
+    openTodoTaskModal(todoId, taskIndex);
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.todo-task-card')) clearTodoTaskCardChoices();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') clearTodoTaskCardChoices();
+  });
+  $('todoTaskModal').addEventListener('close', () => {
+    openTodoTaskRef = null;
+  });
+  $('todoTaskForm').addEventListener('submit', onSaveTodoTask);
+  $('deleteTodoTaskBtn').addEventListener('click', async () => {
+    if (!openTodoTaskRef) return;
+    await deleteTodoTask(openTodoTaskRef.todoId, openTodoTaskRef.taskIndex);
+  });
+  $('todoTaskPriorityGroup').innerHTML = TODO_PRIORITIES.map(
+    (p) =>
+      `<button type="button" class="todo-priority-option prio-${p.value}" data-priority="${p.value}" role="radio"><i class="bi ${p.icon}"></i> ${p.label}</button>`,
+  ).join('');
+  $('todoTaskPriorityGroup').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-priority]');
+    if (!btn) return;
+    setTodoTaskModalPriority(btn.dataset.priority);
+    $('todoTaskAutoCriticalNote').classList.add('hidden');
+  });
+
+  renderTodoCoverSwatches();
+  setTodoCoverEditor();
+  $('todoTitleFont').innerHTML = TODO_TITLE_FONTS.map(
+    (font) => `<option value="${font.value}" style="font-family:${font.family}">${font.label}</option>`,
+  ).join('');
+  setTodoTitleFont();
+  $('todoTitleFont').addEventListener('change', (e) => setTodoTitleFont(e.target.value));
+  $('todoTitle').addEventListener('input', () => setTodoTitleFont($('todoTitleFont').value));
+  $('addTodoTaskMediaUrl').addEventListener('click', addTodoTaskMediaFromUrl);
+  $('todoTaskMediaUrl').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    addTodoTaskMediaFromUrl();
+  });
+  $('todoTaskMediaFiles').addEventListener('change', uploadTodoTaskMediaFiles);
+  $('todoTaskMediaList').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove-media]');
+    if (!btn) return;
+    todoTaskMediaDraft.splice(Number(btn.dataset.removeMedia), 1);
+    renderTodoTaskMedia();
+  });
+  $('todoCoverTypeGroup').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-cover-type]');
+    if (btn) setTodoCoverType(btn.dataset.coverType);
+  });
+  $('todoCoverSwatches').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-cover-swatch]');
+    if (!btn) return;
+    $('todoCoverColor').value = btn.dataset.coverSwatch;
+    updateTodoCoverPreview();
+  });
+  ['todoCover', 'todoCoverColor', 'todoCoverHeight'].forEach((id) => $(id).addEventListener('input', updateTodoCoverPreview));
+  $('todoCoverFile').addEventListener('change', updateTodoCoverPreview);
 
   $('providersForm').addEventListener('submit', onSaveProvider);
   $('participantsForm').addEventListener('submit', onSaveParticipant);
@@ -2110,9 +2741,10 @@ function bindEvents() {
     editingTodoId = null;
     $('todoForm').reset();
     $('todoTasksXlsx').value = '';
-    $('todoCoverFile').value = '';
+    setTodoCoverEditor();
+    setTodoTitleFont();
     clearTodoInlineMessage();
-    renderTodoTaskRows();
+    setTodoModuleModalMode('new');
     $('todoModal').showModal();
   });
   $('cancelEdit').addEventListener('click', () => resetMeetingForm());
@@ -2348,18 +2980,12 @@ function bindEvents() {
     const toggleId = e.target.closest('[data-toggle-todo]')?.dataset?.toggleTodo;
     const pagePrev = e.target.closest('[data-todo-page-prev]')?.dataset?.todoPagePrev;
     const pageNext = e.target.closest('[data-todo-page-next]')?.dataset?.todoPageNext;
-    const taskEditBtn = e.target.closest('[data-edit-task]');
-    const taskDeleteBtn = e.target.closest('[data-delete-task]');
-    const taskSaveBtn = e.target.closest('[data-save-task-edit]');
-    const taskCancelBtn = e.target.closest('[data-cancel-task-edit]');
-    const todoId = taskEditBtn?.dataset?.editTask;
-    const taskIndex = Number(taskEditBtn?.dataset?.taskIndex);
-    const deleteTaskTodoId = taskDeleteBtn?.dataset?.deleteTask;
-    const deleteTaskIndex = Number(taskDeleteBtn?.dataset?.taskIndex);
-    const saveTaskTodoId = taskSaveBtn?.dataset?.saveTaskEdit;
-    const saveTaskIndex = Number(taskSaveBtn?.dataset?.taskIndex);
-    const cancelTaskTodoId = taskCancelBtn?.dataset?.cancelTaskEdit;
-    const cancelTaskIndex = Number(taskCancelBtn?.dataset?.taskIndex);
+    const taskCard = e.target.closest('[data-open-task]');
+    const addTaskId = e.target.closest('[data-add-task]')?.dataset?.addTask;
+    if (addTaskId) {
+      openTodoTaskModal(addTaskId);
+      return;
+    }
     if (toggleId) {
       expandedTodoId = expandedTodoId === toggleId ? null : toggleId;
       renderTodoList();
@@ -2379,16 +3005,18 @@ function bindEvents() {
       renderTodoList();
       return;
     }
-    if (saveTaskTodoId && !Number.isNaN(saveTaskIndex)) {
-      await saveTodoTaskEdit(saveTaskTodoId, saveTaskIndex);
+    const viewBtn = e.target.closest('[data-view-task]');
+    const editTaskBtn = e.target.closest('[data-edit-task]');
+    if (viewBtn || editTaskBtn) {
+      const btn = viewBtn || editTaskBtn;
+      clearTodoTaskCardChoices();
+      if (viewBtn) openTodoTaskView(btn.dataset.viewTask, Number(btn.dataset.taskIndex));
+      else openTodoTaskModal(btn.dataset.editTask, Number(btn.dataset.taskIndex));
       return;
     }
-    if (cancelTaskTodoId && !Number.isNaN(cancelTaskIndex)) {
-      cancelTodoTaskEdit(cancelTaskTodoId, cancelTaskIndex);
-      return;
-    }
-    if (deleteTaskTodoId && !Number.isNaN(deleteTaskIndex)) {
-      await deleteTodoTask(deleteTaskTodoId, deleteTaskIndex);
+    if (taskCard && !e.target.closest('.todo-task-card-check')) {
+      clearTodoTaskCardChoices(taskCard);
+      taskCard.classList.toggle('is-choosing');
       return;
     }
     if (deleteId) {
@@ -2405,26 +3033,20 @@ function bindEvents() {
       todoTaskPageMap.delete(deleteId);
       if (expandedTodoId === deleteId) expandedTodoId = null;
       await loadReferences();
-      return;
     }
-    if (todoId && !Number.isNaN(taskIndex)) await editTodoTask(todoId, taskIndex);
+  });
+
+  $('todoList').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const taskCard = e.target.closest?.('[data-open-task]');
+    if (!taskCard || e.target !== taskCard) return;
+    e.preventDefault();
+    clearTodoTaskCardChoices(taskCard);
+    taskCard.classList.add('is-choosing');
+    taskCard.querySelector('[data-view-task]')?.focus();
   });
 
   $('todoList').addEventListener('change', async (e) => {
-    const inlineTodoId = e.target?.dataset?.inlineTask;
-    const inlineField = e.target?.dataset?.inlineTaskField;
-    const inlineIndex = Number(e.target?.dataset?.taskIndex);
-    if (inlineTodoId && inlineField && !Number.isNaN(inlineIndex)) {
-      const key = getTodoTaskDraftKey(inlineTodoId, inlineIndex);
-      const currentDraft = getTodoTaskDraft(inlineTodoId, inlineIndex);
-      if (currentDraft) {
-        todoTaskEditDrafts.set(key, {
-          ...currentDraft,
-          [inlineField]: e.target.value,
-        });
-      }
-      return;
-    }
     const todoId = e.target?.dataset?.todoTask;
     const taskIndex = Number(e.target?.dataset?.taskIndex);
     if (!todoId || Number.isNaN(taskIndex)) return;
@@ -2435,20 +3057,6 @@ function bindEvents() {
     tasks[taskIndex] = { ...tasks[taskIndex], done: e.target.checked };
     await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
     await loadReferences();
-  });
-
-  $('todoList').addEventListener('input', (e) => {
-    const inlineTodoId = e.target?.dataset?.inlineTask;
-    const inlineField = e.target?.dataset?.inlineTaskField;
-    const inlineIndex = Number(e.target?.dataset?.taskIndex);
-    if (!inlineTodoId || !inlineField || Number.isNaN(inlineIndex)) return;
-    const key = getTodoTaskDraftKey(inlineTodoId, inlineIndex);
-    const currentDraft = getTodoTaskDraft(inlineTodoId, inlineIndex);
-    if (!currentDraft) return;
-    todoTaskEditDrafts.set(key, {
-      ...currentDraft,
-      [inlineField]: e.target.value,
-    });
   });
 }
 

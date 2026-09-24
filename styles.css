@@ -1824,6 +1824,20 @@ textarea {
   accent-color: var(--blue);
 }
 
+.todo-task-card {
+  cursor: grab;
+}
+
+.todo-task-card.is-drag-chosen {
+  cursor: grabbing;
+  box-shadow: 0 12px 28px rgba(40, 30, 120, 0.18);
+}
+
+.todo-task-card.is-drag-ghost {
+  opacity: 0.35;
+  border-style: dashed;
+}
+
 .todo-task-card-add {
   min-height: 132px;
   border: 2px dashed #cfcbe8;

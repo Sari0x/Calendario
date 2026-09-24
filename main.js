@@ -1170,16 +1170,12 @@ function todoCard(todo) {
       </div>
 
       <div class="todo-body ${isExpanded ? '' : 'hidden'}">
-        <div class="todo-task-grid">
+        <div class="todo-task-grid" data-task-grid="${todo.id}" data-page-start="${start}">
           ${visibleTasks.map((task, idx) => renderTodoTaskCard(todo.id, task, start + idx)).join('')}
-          ${
-            currentPage === totalPages
-              ? `<button type="button" class="todo-task-card-add" data-add-task="${todo.id}">
-                  <i class="bi bi-plus-lg"></i>
-                  <span>Nueva tarea</span>
-                </button>`
-              : ''
-          }
+          <button type="button" class="todo-task-card-add" data-add-task="${todo.id}">
+            <i class="bi bi-plus-lg"></i>
+            <span>Nueva tarea</span>
+          </button>
         </div>
         ${
           totalPages > 1
@@ -1311,11 +1307,71 @@ async function importTodoTasksFromXlsx() {
   showTodoInlineMessage(`${mapped.length} tareas importadas correctamente.`, 'success');
 }
 
+let todoTaskSortables = [];
+let todoTaskDragActive = false;
+let todoTaskDragEndedAt = 0;
+
 function renderTodoList() {
   const list = $('todoList');
   if (!list) return;
+  // No re-renderizar en medio de un arrastre (por ejemplo, el ticker de cada minuto).
+  if (todoTaskDragActive) return;
   if (expandedTodoId && !todos.some((todo) => todo.id === expandedTodoId)) expandedTodoId = null;
   list.innerHTML = todos.length ? todos.map(todoCard).join('') : '<p>No hay checklist creados.</p>';
+  initTodoTaskSortables();
+}
+
+function initTodoTaskSortables() {
+  todoTaskSortables.forEach((sortable) => sortable.destroy());
+  todoTaskSortables = [];
+  if (typeof Sortable === 'undefined') return;
+  document.querySelectorAll('#todoList [data-task-grid]').forEach((grid) => {
+    const todoId = grid.dataset.taskGrid;
+    const pageStart = Number(grid.dataset.pageStart) || 0;
+    todoTaskSortables.push(
+      Sortable.create(grid, {
+        animation: 180,
+        draggable: '.todo-task-card',
+        filter: '.todo-task-card-add, .todo-task-card-check, .todo-task-card-choices',
+        preventOnFilter: false,
+        // Arrastre propio de Sortable en vez del drag & drop nativo: se comporta igual en todos los navegadores.
+        forceFallback: true,
+        fallbackTolerance: 4,
+        delay: 180,
+        delayOnTouchOnly: true,
+        ghostClass: 'is-drag-ghost',
+        chosenClass: 'is-drag-chosen',
+        onStart: () => {
+          todoTaskDragActive = true;
+          clearTodoTaskCardChoices();
+        },
+        // La card "Nueva tarea" siempre queda al final.
+        onMove: (evt) => !evt.related?.classList.contains('todo-task-card-add'),
+        onEnd: (evt) => {
+          todoTaskDragActive = false;
+          todoTaskDragEndedAt = Date.now();
+          moveTodoTask(todoId, pageStart + evt.oldDraggableIndex, pageStart + evt.newDraggableIndex);
+        },
+      }),
+    );
+  });
+}
+
+async function moveTodoTask(todoId, fromIndex, toIndex) {
+  const todo = todos.find((row) => row.id === todoId);
+  if (!todo || fromIndex === toIndex || Number.isNaN(fromIndex) || Number.isNaN(toIndex)) return;
+  const tasks = [...(todo.tasks || [])];
+  const [moved] = tasks.splice(fromIndex, 1);
+  if (!moved) return;
+  tasks.splice(toIndex, 0, moved);
+  todo.tasks = tasks;
+  renderTodoList();
+  try {
+    await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
+  } catch (error) {
+    handleRuntimeError(error, 'No se pudo guardar el nuevo orden de las tareas.');
+    await loadReferences();
+  }
 }
 
 async function loadReferences() {
@@ -1336,6 +1392,8 @@ async function loadReferences() {
         ? todo.items.map((item) => ({ title: item.text || '', startDate: '', endDate: '', comment: '', done: Boolean(item.done) }))
         : [],
   }));
+  // Módulos más nuevos primero (las claves de push son cronológicas).
+  todos.sort((a, b) => String(b.id).localeCompare(String(a.id)));
   await applyTodoOverdueEscalation();
   renderFilterOptions();
   renderPickers();
@@ -1725,7 +1783,6 @@ async function deleteTodoTask(todoId, taskIndex) {
   if (!result.isConfirmed) return;
   const tasks = (todo.tasks || []).filter((_, index) => index !== taskIndex);
   await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
-  if (isNew) todoTaskPageMap.set(todoId, Math.ceil(tasks.length / 15));
   closeTodoTaskModal();
   await loadReferences();
 }
@@ -2131,8 +2188,7 @@ async function onSaveTodoTask(e) {
   const title = $('todoTaskTitleInput').value.trim();
   if (!title) return;
   const tasks = [...(todo.tasks || [])];
-  const targetIndex = isNew ? tasks.length : taskIndex;
-  tasks[targetIndex] = {
+  const savedTask = {
     ...task,
     title,
     startDate: $('todoTaskStartInput').value.trim(),
@@ -2143,6 +2199,13 @@ async function onSaveTodoTask(e) {
     autoCriticalFor: task.autoCriticalFor || '',
     media: todoTaskMediaDraft,
   };
+  // Las tareas nuevas quedan primeras.
+  if (isNew) {
+    tasks.unshift(savedTask);
+    todoTaskPageMap.set(todoId, 1);
+  } else {
+    tasks[taskIndex] = savedTask;
+  }
   $('saveTodoTask').disabled = true;
   try {
     await update(ref(rtdb, `todos/${todoId}`), { tasks, updatedAt: new Date().toISOString() });
@@ -3015,6 +3078,8 @@ function bindEvents() {
       return;
     }
     if (taskCard && !e.target.closest('.todo-task-card-check')) {
+      // Evita que soltar una card después de arrastrarla abra el menú Ver más / Editar.
+      if (Date.now() - todoTaskDragEndedAt < 300) return;
       clearTodoTaskCardChoices(taskCard);
       taskCard.classList.toggle('is-choosing');
       return;

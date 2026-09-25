@@ -986,6 +986,17 @@ const TODO_TITLE_FONTS = [
   { value: 'jetbrains', label: 'JetBrains Mono', family: "'JetBrains Mono', monospace" },
 ];
 const todoDateShortFmt = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short' });
+// en-CA formatea como YYYY-MM-DD, el mismo formato que usan las fechas de las tareas.
+const argentinaDateKeyFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Argentina/Buenos_Aires',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function getArgentinaTodayKey() {
+  return argentinaDateKeyFmt.format(new Date());
+}
 
 function normalizeTaskPriority(value) {
   const raw = String(value || '')
@@ -1211,7 +1222,7 @@ function createTaskRow(task = {}) {
 }
 
 function renderTodoTaskRows(tasks = []) {
-  const rows = tasks.length ? tasks : [{ title: '', startDate: '', endDate: '' }];
+  const rows = tasks.length ? tasks : [{ title: '', startDate: getArgentinaTodayKey(), endDate: '' }];
   $('todoTaskRows').innerHTML = rows.map((task) => createTaskRow(task)).join('');
   initTodoTaskDatePickers();
 }
@@ -2141,7 +2152,7 @@ async function uploadTodoTaskMediaFiles() {
 function openTodoTaskModal(todoId, taskIndex = null) {
   const todo = todos.find((row) => row.id === todoId);
   const isNew = taskIndex === null;
-  const task = isNew ? { priority: 'normal' } : todo?.tasks?.[taskIndex];
+  const task = isNew ? { priority: 'normal', startDate: getArgentinaTodayKey() } : todo?.tasks?.[taskIndex];
   if (!todo || !task) return;
   openTodoTaskRef = { todoId, taskIndex };
   $('todoTaskModalHeading').textContent = isNew ? 'Nueva tarea' : 'Editar tarea';
@@ -2897,7 +2908,7 @@ function bindEvents() {
   $('folderTodoNovo').addEventListener('click', () => switchSection('todo'));
   $('backToNovoHub').addEventListener('click', () => switchSection('hub'));
   $('addTodoTaskRow').addEventListener('click', () => {
-    $('todoTaskRows').insertAdjacentHTML('beforeend', createTaskRow());
+    $('todoTaskRows').insertAdjacentHTML('beforeend', createTaskRow({ startDate: getArgentinaTodayKey() }));
     initTodoTaskDatePickers();
   });
   $('importTodoTasksXlsx').addEventListener('click', importTodoTasksFromXlsx);

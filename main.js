@@ -1832,7 +1832,7 @@ function renderTodoMediaItems(items, { removable = false } = {}) {
         </div>`;
       }
       return `<div class="todo-media-item">
-        <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHtml(item.url)}" alt="Imagen adjunta" loading="lazy" /></a>
+        <button type="button" class="todo-media-view" data-view-media="${escapeHtml(item.url)}" aria-label="Ver imagen" title="Ver imagen"><img src="${escapeHtml(item.url)}" alt="Imagen adjunta" loading="lazy" /></button>
         ${remove}
       </div>`;
     })
@@ -1874,6 +1874,37 @@ function closeTodoTaskView() {
   // Vaciar los iframes corta la reproducción de los videos al cerrar.
   $('todoTaskViewMedia').innerHTML = '';
   if ($('todoTaskViewModal').open) $('todoTaskViewModal').close();
+}
+
+let imageViewerUrls = [];
+let imageViewerIndex = 0;
+
+function showImageViewerAt(index) {
+  const total = imageViewerUrls.length;
+  if (!total) return;
+  imageViewerIndex = (index + total) % total;
+  const url = imageViewerUrls[imageViewerIndex];
+  $('imageViewerImg').src = url;
+  $('imageViewerOpen').href = url;
+  $('imageViewerCounter').textContent = total > 1 ? `${imageViewerIndex + 1} / ${total}` : '';
+  $('imageViewerModal').classList.toggle('is-single', total < 2);
+}
+
+// Abre el visor con todas las imágenes de la lista donde se hizo click, para poder navegarlas.
+function openImageViewerFromList(list, url) {
+  imageViewerUrls = [...list.querySelectorAll('[data-view-media]')].map((btn) => btn.dataset.viewMedia);
+  showImageViewerAt(Math.max(imageViewerUrls.indexOf(url), 0));
+  if (!$('imageViewerModal').open) $('imageViewerModal').showModal();
+}
+
+function closeImageViewer() {
+  if ($('imageViewerModal').open) $('imageViewerModal').close();
+}
+
+function onMediaListClick(e) {
+  const btn = e.target.closest('[data-view-media]');
+  if (!btn) return;
+  openImageViewerFromList(e.currentTarget, btn.dataset.viewMedia);
 }
 
 function getTaskStatusLabel(task) {
@@ -2766,9 +2797,25 @@ function bindEvents() {
   $('todoTaskMediaFiles').addEventListener('change', uploadTodoTaskMediaFiles);
   $('todoTaskMediaList').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-remove-media]');
-    if (!btn) return;
+    if (!btn) return onMediaListClick(e);
     todoTaskMediaDraft.splice(Number(btn.dataset.removeMedia), 1);
     renderTodoTaskMedia();
+  });
+  $('todoTaskViewMedia').addEventListener('click', onMediaListClick);
+  $('imageViewerClose').addEventListener('click', closeImageViewer);
+  $('imageViewerPrev').addEventListener('click', () => showImageViewerAt(imageViewerIndex - 1));
+  $('imageViewerNext').addEventListener('click', () => showImageViewerAt(imageViewerIndex + 1));
+  $('imageViewerModal').addEventListener('click', (e) => {
+    // Click en el fondo (fuera de la imagen y los botones) cierra el visor.
+    if (e.target === e.currentTarget) closeImageViewer();
+  });
+  $('imageViewerModal').addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') showImageViewerAt(imageViewerIndex - 1);
+    if (e.key === 'ArrowRight') showImageViewerAt(imageViewerIndex + 1);
+  });
+  $('imageViewerModal').addEventListener('close', () => {
+    $('imageViewerImg').removeAttribute('src');
+    imageViewerUrls = [];
   });
   $('todoCoverTypeGroup').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-cover-type]');

@@ -355,6 +355,17 @@
       </form>
     </dialog>
 
+    <dialog id="imageViewerModal" class="image-viewer" aria-label="Visor de imágenes">
+      <div class="image-viewer-toolbar">
+        <span id="imageViewerCounter" class="image-viewer-counter"></span>
+        <a id="imageViewerOpen" class="image-viewer-btn" target="_blank" rel="noopener noreferrer" title="Abrir en pestaña nueva" aria-label="Abrir en pestaña nueva"><i class="bi bi-box-arrow-up-right"></i></a>
+        <button type="button" id="imageViewerClose" class="image-viewer-btn" title="Cerrar" aria-label="Cerrar"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <button type="button" id="imageViewerPrev" class="image-viewer-btn image-viewer-nav is-prev" aria-label="Anterior"><i class="bi bi-chevron-left"></i></button>
+      <img id="imageViewerImg" class="image-viewer-img" alt="Imagen adjunta" />
+      <button type="button" id="imageViewerNext" class="image-viewer-btn image-viewer-nav is-next" aria-label="Siguiente"><i class="bi bi-chevron-right"></i></button>
+    </dialog>
+
     <dialog id="slackConfigModal" class="modal">
       <form id="slackConfigForm" class="modal-content">
         <h3>Integración Slack + App Script</h3>

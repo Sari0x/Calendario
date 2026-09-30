@@ -1137,10 +1137,6 @@ function renderTodoTaskCard(todoId, task, taskIndex) {
       ${task.comment ? '<span class="todo-task-chip" title="Tiene comentarios"><i class="bi bi-chat-left-text"></i></span>' : ''}
       ${media.length ? `<span class="todo-task-chip" title="Adjuntos"><i class="bi bi-paperclip"></i> ${media.length}</span>` : ''}
     </div>
-    <div class="todo-task-card-choices">
-      <button type="button" class="btn btn-pill btn-primary" data-view-task="${todoId}" data-task-index="${taskIndex}"><i class="bi bi-eye"></i> Ver más</button>
-      <button type="button" class="btn btn-pill btn-ghost" data-edit-task="${todoId}" data-task-index="${taskIndex}"><i class="bi bi-pencil-square"></i> Editar</button>
-    </div>
   </article>`;
 }
 
@@ -1343,7 +1339,7 @@ function initTodoTaskSortables() {
       Sortable.create(grid, {
         animation: 180,
         draggable: '.todo-task-card',
-        filter: '.todo-task-card-add, .todo-task-card-check, .todo-task-card-choices',
+        filter: '.todo-task-card-add, .todo-task-card-check',
         preventOnFilter: false,
         // Arrastre propio de Sortable en vez del drag & drop nativo: se comporta igual en todos los navegadores.
         forceFallback: true,
@@ -1354,7 +1350,6 @@ function initTodoTaskSortables() {
         chosenClass: 'is-drag-chosen',
         onStart: () => {
           todoTaskDragActive = true;
-          clearTodoTaskCardChoices();
         },
         // La card "Nueva tarea" siempre queda al final.
         onMove: (evt) => !evt.related?.classList.contains('todo-task-card-add'),
@@ -2136,12 +2131,6 @@ function exportTodosToXlsx() {
   XLSX.writeFile(workbook, `Novo-To-Do-${toDateKeyLocal(new Date())}.xlsx`);
 }
 
-function clearTodoTaskCardChoices(exceptCard = null) {
-  document.querySelectorAll('.todo-task-card.is-choosing').forEach((card) => {
-    if (card !== exceptCard) card.classList.remove('is-choosing');
-  });
-}
-
 function addTodoTaskMediaFromUrl() {
   const url = $('todoTaskMediaUrl').value.trim();
   if (!url) return;
@@ -2755,12 +2744,6 @@ function bindEvents() {
     closeTodoTaskView();
     openTodoTaskModal(todoId, taskIndex);
   });
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.todo-task-card')) clearTodoTaskCardChoices();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') clearTodoTaskCardChoices();
-  });
   $('todoTaskModal').addEventListener('close', () => {
     openTodoTaskRef = null;
   });
@@ -3126,20 +3109,10 @@ function bindEvents() {
       renderTodoList();
       return;
     }
-    const viewBtn = e.target.closest('[data-view-task]');
-    const editTaskBtn = e.target.closest('[data-edit-task]');
-    if (viewBtn || editTaskBtn) {
-      const btn = viewBtn || editTaskBtn;
-      clearTodoTaskCardChoices();
-      if (viewBtn) openTodoTaskView(btn.dataset.viewTask, Number(btn.dataset.taskIndex));
-      else openTodoTaskModal(btn.dataset.editTask, Number(btn.dataset.taskIndex));
-      return;
-    }
     if (taskCard && !e.target.closest('.todo-task-card-check')) {
-      // Evita que soltar una card después de arrastrarla abra el menú Ver más / Editar.
+      // Evita que soltar una card después de arrastrarla la abra.
       if (Date.now() - todoTaskDragEndedAt < 300) return;
-      clearTodoTaskCardChoices(taskCard);
-      taskCard.classList.toggle('is-choosing');
+      openTodoTaskView(taskCard.dataset.openTask, Number(taskCard.dataset.taskIndex));
       return;
     }
     if (deleteId) {
@@ -3164,9 +3137,7 @@ function bindEvents() {
     const taskCard = e.target.closest?.('[data-open-task]');
     if (!taskCard || e.target !== taskCard) return;
     e.preventDefault();
-    clearTodoTaskCardChoices(taskCard);
-    taskCard.classList.add('is-choosing');
-    taskCard.querySelector('[data-view-task]')?.focus();
+    openTodoTaskView(taskCard.dataset.openTask, Number(taskCard.dataset.taskIndex));
   });
 
   $('todoList').addEventListener('change', async (e) => {

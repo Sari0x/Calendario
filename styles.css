@@ -1615,12 +1615,23 @@ textarea {
   box-shadow: 0 4px 14px rgba(229, 86, 111, 0.1);
 }
 
+.todo-task-card.is-done,
+.todo-task-card.is-done .todo-priority-pill {
+  --prio-accent: #9aa1ad;
+  --prio-border: #e1e4ea;
+  --prio-bg: #f3f4f6;
+  --prio-pill-bg: #e6e8ec;
+  --prio-pill-text: #6b7280;
+}
+
 .todo-task-card.is-done {
   opacity: 0.62;
+  box-shadow: none;
 }
 
 .todo-task-card.is-done .todo-task-card-title {
   text-decoration: line-through;
+  color: var(--muted);
 }
 
 .todo-task-card-head {
@@ -1707,9 +1718,9 @@ textarea {
 }
 
 .todo-task-chip.is-done {
-  border-color: #caedd4;
-  background: #e3f8e8;
-  color: #155e2d;
+  border-color: #e1e4ea;
+  background: #e6e8ec;
+  color: #6b7280;
 }
 
 /* Modal de detalle de tarea */
